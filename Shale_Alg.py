@@ -4,31 +4,12 @@ from mathfunc import(
     base10_conversion
 )
 
+from Common_Alg import(
+    generate_simple_latin_square
+)
+
 def RR1(node):
-    """
-    Constructs a simple round-robin matrix.
-
-    Each element i (0 ≤ i < node) generates a list that:
-    - Contains all indices from 0 to node - 1,
-    - But starts the list at index i (wrapping around).
-
-    Example:
-        RR1(3) → [
-            [0, 1, 2],
-            [1, 2, 0],
-            [2, 0, 1]
-        ]
-
-    Args:
-        node (int): Number of nodes (or positions).
-
-    Returns:
-        list[list[int]]: The generated round-robin structure.
-    """
-    temp = []
-    for i in range(node):
-        temp.append([x for x in range(i)] + [y for y in range(i, node)])
-    return temp
+    return generate_simple_latin_square(node)
 
 
 def RR2(base, dimension):

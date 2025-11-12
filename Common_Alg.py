@@ -1,16 +1,32 @@
 import numpy as np
-import random
 
 def generate_simple_latin_square(N):
-    # Create the first row: [1, 2, 3, ..., N]
+    """
+    Constructs a simple round-robin matrix.
+
+    Each element i (0 ≤ i < node) generates a list that:
+    - Contains all indices from 0 to node - 1,
+    - But starts the list at index i (wrapping around).
+
+    Example:
+        RR1(3) → [
+            [0, 1, 2],
+            [1, 2, 0],
+            [2, 0, 1]
+        ]
+
+    Args:
+        node (int): Number of nodes (or positions).
+
+    Returns:
+        list[list[int]]: The generated round-robin structure.
+    """
     first_row = np.arange(1, N + 1)
-    # Create an empty N x N matrix
     A = np.zeros((N, N), dtype=int)
-    # Fill each row by 'rolling' the first row
     for i in range(N):
         A[i] = np.roll(first_row, -i)
         
-    return A
+    return A.tolist()
 
 # --- Generate the 8x8 matrix ---
 N = 8
@@ -52,7 +68,7 @@ def generate_random_latin_square(N):
         for j in range(N):
             A[i, j] = value_map[A[i, j]]
             
-    return A
+    return A.tolist()
 
 # --- Generate the 8x8 matrix ---
 N = 8

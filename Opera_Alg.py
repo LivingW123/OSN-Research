@@ -1,4 +1,10 @@
 import collections
+import heapq  # We need heapq for the priority queue, not collections.deque
+import numpy as np # Using numpy for the latin square generator
+
+from Common_Alg import(
+    generate_random_latin_square
+)
 
 def find_optimal_path_broken_racks(A, broken_racks, start_tor, end_tor):
     """
@@ -81,22 +87,12 @@ def find_optimal_path_broken_racks(A, broken_racks, start_tor, end_tor):
     return None
 
 # The 8x8 matrix A from your image
-A = [
-    [3, 7, 1, 8, 5, 2, 6, 4],  # Node 0
-    [7, 8, 4, 5, 3, 1, 2, 6],  # Node 1
-    [1, 4, 5, 3, 2, 6, 7, 8],  # Node 2
-    [5, 3, 2, 4, 6, 7, 8, 1],  # Node 3
-    [4, 6, 3, 2, 1, 8, 1, 7],  # Node 4
-    [6, 5, 8, 7, 4, 3, 3, 2],  # Node 5
-    [2, 1, 7, 6, 8, 4, 4, 5],  # Node 6
-    [8, 2, 6, 1, 7, 5, 5, 3]   # Node 7
-]
+A = generate_random_latin_square(8)
 
 start = 0
 end = 7 # (Which is node value 8 in the matrix)
 
 # --- Case 1: No broken racks ---
-# A[0][3] = 8. This is a 1-hop path from 0 to 7 via rack 3.
 path = find_optimal_path_broken_racks(A, set(), start, end)
 print(f"Case 1: No broken racks")
 print(f"Path from {start} to {end}: {path}")
@@ -104,18 +100,147 @@ print(f"Path from {start} to {end}: {path}")
 
 print("-" * 20)
 
-# --- Case 2: The 1-hop path is broken ---
-# Let's break rack 3
-broken = {3} 
+# --- Case 2:  ---
+broken = {3,4,5} 
 path = find_optimal_path_broken_racks(A, broken, start, end)
-print(f"Case 2: Rack 3 is broken")
+print(f"Case 2: Rack 3,4,5 is broken")
 print(f"Path from {start} to {end}: {path}")
 
-# --- Trace ---
-# 1. The 1-hop path [0, 7] (via rack 3) is now impossible.
-# 2. BFS checks other neighbors of 0. Let's say it finds node 6
-#    (A[0][6] = 6, via rack 6).
-# 3. BFS then checks neighbors of 6.
-#    (A[6][4] = 8). This is node 7, via rack 4.
-# 4. Rack 4 is not broken, so this path is valid.
-# Expected: [0, 6, 7] (or another valid 2-hop path)
+print("-" * 20)
+
+# --- Case 3 ---
+broken = {3,4,5,6,7} 
+path = find_optimal_path_broken_racks(A, broken, start, end)
+print(f"Case 3: Rack 1,2,5,6,7 is broken")
+print(f"Path from {start} to {end}: {path}")
+
+print("------------------------------------------------------------")
+
+
+
+
+# --- Weighted Graph ---
+
+
+def find_least_cost_path_weighted_racks(A, rack_weights, start_tor, end_tor):
+    """
+    Finds the *least cost* path given weighted racks.
+    Uses Dijkstra's algorithm.
+    
+    Args:
+        A (list[list[int]]): 
+            The N x M matrix. A[i][j] = k means node 'i'
+            connects to node 'k' (1-indexed) via rack 'j'.
+            
+        rack_weights (list[float]): 
+            A list of costs for each rack. 
+            Use float('inf') to represent a "broken" rack.
+            
+        start_tor (int): The 0-indexed starting ToR.
+        end_tor (int): The 0-indexed destination ToR.
+        
+    Returns:
+        tuple (float, list[int]): 
+            A tuple of (total_cost, path_list)
+            or (float('inf'), None) if no path exists.
+    """
+    
+    num_nodes = len(A)
+    num_racks = len(A[0])
+    
+    # --- 1. Build a WEIGHTED Adjacency List ---
+    # The format will be: {node: [(cost, neighbor), (cost, neighbor), ...]}
+    adj_list = {i: [] for i in range(num_nodes)}
+    
+    for i in range(num_nodes):  # i is the 0-indexed current node
+        for j in range(num_racks):  # j is the rack (column)
+            
+            cost = rack_weights[j]
+            
+            # If the rack is "broken" (infinite cost), skip it
+            if cost == float('inf'):
+                continue
+                
+            neighbor_val = A[i][j]
+            neighbor_idx = neighbor_val - 1
+            
+            # Don't add self-loops if they don't help
+            if neighbor_idx != i:
+                adj_list[i].append((cost, neighbor_idx))
+
+    # --- 2. Handle Invalid Inputs ---
+    if start_tor == end_tor:
+        return (0, [start_tor]) # Cost is 0
+
+    # --- 3. Initialize for Dijkstra's Algorithm ---
+    
+    # Priority queue stores: (current_total_cost, current_node, path_so_far)
+    # heapq always pops the tuple with the *smallest* first element (total_cost)
+    pq = [(0, start_tor, [start_tor])] 
+    
+    # 'visited' stores nodes for which we have found the *final* cheapest path
+    visited = set()
+    
+    # --- 4. Run Dijkstra's ---
+    while pq:
+        # Get the node with the lowest cost from the start
+        current_cost, current_tor, path = heapq.heappop(pq)
+        
+        # If we've already found a cheaper path to this node, skip
+        if current_tor in visited:
+            continue
+            
+        visited.add(current_tor)
+
+        # --- 5. Goal Check ---
+        if current_tor == end_tor:
+            # Found the cheapest path!
+            return (current_cost, path)
+
+        # --- 6. Explore Neighbors ---
+        for edge_cost, neighbor in adj_list[current_tor]:
+            if neighbor not in visited:
+                new_cost = current_cost + edge_cost
+                new_path = path + [neighbor]
+                # Add the new path to the priority queue
+                heapq.heappush(pq, (new_cost, neighbor, new_path))
+
+    # --- 7. No Path Found ---
+    return (float('inf'), None)
+
+# --- EXAMPLE USAGE ---
+
+A = generate_random_latin_square(8)
+
+start = 0
+end = 7
+
+# --- Case 1: All racks have a simple cost ---
+rack_weights_1 = [10, 10, 10, 15, 10, 10, 10, 10]
+print("--- Case 1: Rack 3 is expensive ---")
+cost, path = find_least_cost_path_weighted_racks(A, rack_weights_1, start, end)
+print(f"Path from {start} to {end}: {path}")
+print(f"Total cost: {cost}\n")
+
+
+print("-" * 20)
+
+# --- Case 2: Make the 1-hop path "broken" ---
+# A "broken" rack just has infinite cost
+rack_weights_2 = [1, 1, 1, float('inf'), 1, 1, 1, 1]
+
+print("--- Case 2: Rack 3 is 'broken' (cost=inf) ---")
+cost, path = find_least_cost_path_weighted_racks(A, rack_weights_2, start, end)
+print(f"Path from {start} to {end}: {path}")
+print(f"Total cost: {cost}\n")
+
+print("-" * 20)
+
+# --- Case 3: A more complex cost scenario ---
+rack_weights_3 = [5, 20, 5, 5, 20, 20, 5, 20]
+# Racks 0, 2, 3, 6 are cheap (cost 5)
+# Racks 1, 4, 5, 7 are expensive (cost 20)
+print("--- Case 3: Mixed cheap/expensive racks ---")
+cost, path = find_least_cost_path_weighted_racks(A, rack_weights_3, start, end)
+print(f"Path from {start} to {end}: {path}")
+print(f"Total cost: {cost}\n")
