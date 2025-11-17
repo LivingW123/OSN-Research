@@ -92,10 +92,10 @@ def is_solvable(list_of_sets):
             
     return True
 
-
-def create_random_constrained_matrix(list_of_sets):
+def create_constrained_matrix(list_of_sets):
     """
-    Tries to find a random matrix arrangement that satisfies the column constraint.
+    Finds a matrix arrangement that satisfies the column constraint.
+    Iterative backtracking without recursion.
     """
     if not list_of_sets:
         return []
@@ -107,32 +107,113 @@ def create_random_constrained_matrix(list_of_sets):
     k = len(list_of_sets[0])
     
     matrix = [[None for _ in range(k)] for _ in range(n)]
-    
     rows_used = [set() for _ in range(n)]
     cols_used = [set() for _ in range(k)]
-
-    def solve(row, col):
-        """Recursive helper function."""
-        if row == n:
-            return solve(0, col + 1)
-        if col == k:
-            return True
-        current_set = list_of_sets[row]
-        numbers_to_try = list(current_set)
-        random.shuffle(numbers_to_try)
-        for num in numbers_to_try:
+    
+    pos = 0  # Current position (0 to n*k - 1)
+    attempts = [0] * (n * k)  # Track which number index we're trying at each position
+    
+    while pos >= 0:
+        if pos == n * k:
+            # Found a solution
+            return matrix
+        
+        row = pos // k
+        col = pos % k
+        current_set = list(list_of_sets[row])
+        
+        # Undo previous placement at this position
+        if matrix[row][col] is not None:
+            rows_used[row].remove(matrix[row][col])
+            cols_used[col].remove(matrix[row][col])
+            matrix[row][col] = None
+        
+        # Try numbers starting from the current attempt index
+        found = False
+        for i in range(attempts[pos], len(current_set)):
+            num = current_set[i]
             if num not in rows_used[row] and num not in cols_used[col]:
                 matrix[row][col] = num
                 rows_used[row].add(num)
                 cols_used[col].add(num)
-                if solve(row + 1, col):
-                    return True
-                cols_used[col].remove(num)
-                rows_used[row].remove(num)
-                matrix[row][col] = None
-        return False
+                attempts[pos] = i + 1  # Next time, try the next number
+                found = True
+                break
+        
+        if found:
+            # Move forward
+            pos += 1
+        else:
+            # Backtrack
+            attempts[pos] = 0  # Reset attempts for this position
+            pos -= 1
+    
+    return None
 
-    if solve(0, 0):
-        return matrix
-    else:
+print(create_constrained_matrix([{0,1},{2,1},{0,3}]))
+
+def create_random_constrained_matrix(list_of_sets):
+    """
+    Finds a random matrix arrangement that satisfies the column constraint.
+    Iterative backtracking without recursion.
+    """
+    if not list_of_sets:
+        return []
+
+    if not is_solvable(list_of_sets):
         return None
+
+    n = len(list_of_sets) 
+    k = len(list_of_sets[0])
+    
+    matrix = [[None for _ in range(k)] for _ in range(n)]
+    rows_used = [set() for _ in range(n)]
+    cols_used = [set() for _ in range(k)]
+    
+    # Pre-shuffle the numbers for each row to randomize
+    shuffled_sets = [list(s) for s in list_of_sets]
+    for s in shuffled_sets:
+        random.shuffle(s)
+    
+    pos = 0  # Current position (0 to n*k - 1)
+    attempts = [0] * (n * k)  # Track which number index we're trying at each position
+    
+    while pos >= 0:
+        if pos == n * k:
+            # Found a solution
+            return matrix
+        
+        row = pos // k
+        col = pos % k
+        current_set = shuffled_sets[row]
+        
+        # Undo previous placement at this position
+        if matrix[row][col] is not None:
+            rows_used[row].remove(matrix[row][col])
+            cols_used[col].remove(matrix[row][col])
+            matrix[row][col] = None
+        
+        # Try numbers starting from the current attempt index
+        found = False
+        for i in range(attempts[pos], len(current_set)):
+            num = current_set[i]
+            if num not in rows_used[row] and num not in cols_used[col]:
+                matrix[row][col] = num
+                rows_used[row].add(num)
+                cols_used[col].add(num)
+                attempts[pos] = i + 1  # Next time, try the next number
+                found = True
+                break
+        
+        if found:
+            # Move forward
+            pos += 1
+        else:
+            # Backtrack
+            attempts[pos] = 0  # Reset attempts for this position
+            pos -= 1
+    
+    return None
+    
+
+print(create_random_constrained_matrix([{0,1},{2,1},{0,3}]))

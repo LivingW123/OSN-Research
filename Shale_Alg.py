@@ -5,11 +5,12 @@ from mathfunc import(
 )
 
 from Common_Alg import(
-    generate_simple_latin_square
+    generate_simple_latin_square,
+    create_constrained_matrix
 )
 
 def RR1(node):
-    return generate_simple_latin_square(node)
+    return create_constrained_matrix(generate_simple_latin_square(node))
 
 
 def RR2(base, dimension):
@@ -51,7 +52,7 @@ def RR2(base, dimension):
         # Convert tuples to base-10 integers
         final_set = {base10_conversion(base, t, dimension) for t in temp}
         mat.append(final_set)
-    return mat
+    return create_constrained_matrix(mat)
 
 
 def RR3(base, dimension, t):
@@ -104,7 +105,7 @@ def RR3(base, dimension, t):
         # Convert tuples to base-10 integers
         final_set = {base10_conversion(base, t, dimension) for t in temp}
         mat.append(final_set)
-    return mat
+    return create_constrained_matrix(mat)
 
 
 # --- Example Outputs ---
