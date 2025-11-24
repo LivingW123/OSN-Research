@@ -1,0 +1,345 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{mathrsfs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\title{Connectivity Matrices}
+\author{Oneal Wang}
+\date{October 2025}
+
+\begin{document}
+    \maketitle
+
+    \section{Introduction}
+
+    \section{Shale}
+    $V$ is represented as a matrix of the sending node as rows and receiving node
+    as columns
+    \[
+        V = \mathscr{M}_{n \times n}
+    \]
+    $D$ is the sending data represented as a matrix with b bits and n nodes
+    \[
+        D = \mathscr{M}_{b \times n}
+    \]
+    $T^{i}$ transformation from V to W for some timeslot i (cyclical) The full edge
+    basis is trivial: $e_{i,j}$ is the standard unit vector with 1 at the
+    coordinate for edge (i,j) and 0 elsewhere. Those $m=(nC2)$ vectors span $R^{m}$.
+    The round-robin matching vectors are then simply sums of some of those edge
+    unit vector s.
+    \[
+        T^{i} = \mathscr{M}_{n \times n}
+    \]
+    \[
+        T^{i} \rightarrow\mathscr{L}(V,W)
+    \]
+    $W$ is the recieving node for each sending node for a specific time slot called
+    an adjacency matrix
+    \[
+        W = \mathscr{M}_{n \times n}\mid W_{A_{i,k},i}= 1, \neg(W_{A_{i,k},i}) =
+        0
+    \]
+    $S$ is the recieved data represented as a matrix with b bits and n nodes
+    \[
+        S = \mathscr{M}_{b \times n}
+    \]
+    \begin{enumerate}
+        \item Round-Robin 1 Letter 1 Node\\
+            minimum time coefficient: n\\
+            maximum time coefficient: n(n-1)\\
+            number of pathways: n(n-1)/2\\
+            for an arbitrary i broken nodes, remove $(2ni-i+1)/2$ pathways\\
+            for an arbitrary k broken pathways, maximum increase to n-1 timeslots,
+            centered around +1 timeslot
+            \[
+                \mathscr{M}_{b \times n}=DT^{i}(V) = DW = S, i \in \{1, ... ,n-1\}
+                \\
+            \]
+            Example 2.1 (6 nodes, 5 timeslots, h=1): \\
+            W = Adjacency Matrix of a Directed Graph, where each timeslot is the
+            row and each column is the node
+            \[
+                A =
+                \begin{bmatrix}
+                    2 & 3 & 4 & 5 & 6 & 1 \\
+                    3 & 4 & 5 & 6 & 1 & 2 \\
+                    4 & 5 & 6 & 1 & 2 & 3 \\
+                    5 & 6 & 1 & 2 & 3 & 4 \\
+                    6 & 1 & 2 & 3 & 4 & 5 \\
+                \end{bmatrix}
+            \]
+            \[
+                T =
+                \begin{bmatrix}
+                    0 & 0 & 0 & 0 & 0 & 1 \\
+                    1 & 0 & 0 & 0 & 0 & 0 \\
+                    0 & 1 & 0 & 0 & 0 & 0 \\
+                    0 & 0 & 1 & 0 & 0 & 0 \\
+                    0 & 0 & 0 & 1 & 0 & 0 \\
+                    0 & 0 & 0 & 0 & 1 & 0 \\
+                \end{bmatrix}
+            \]
+            \[
+                V =
+                \begin{bmatrix}
+                    0 & 0 & 0 & 0 & 0 & 1 \\
+                    1 & 0 & 0 & 0 & 0 & 0 \\
+                    0 & 1 & 0 & 1 & 0 & 0 \\
+                    0 & 0 & 1 & 1 & 0 & 0 \\
+                    1 & 0 & 0 & 1 & 0 & 0 \\
+                    0 & 0 & 0 & 0 & 1 & 0 \\
+                \end{bmatrix}
+            \]
+            \[
+                W_{5 \times 5}= \mathscr{M}\mid W_{A_{i,k},i}= 1, \neg(W_{A_{i,k},i}
+                ) = 0
+            \]
+            \[
+                DT^{i}(V_{6 \times 6}) = DW_{6 \times 6}= D
+                \begin{bmatrix}
+                    0 & 0 & 0 & 0 & 1 & 0 \\
+                    0 & 0 & 0 & 0 & 0 & 1 \\
+                    1 & 0 & 1 & 0 & 0 & 0 \\
+                    0 & 1 & 1 & 0 & 0 & 0 \\
+                    0 & 0 & 1 & 0 & 0 & 1 \\
+                    0 & 0 & 0 & 1 & 0 & 0 \\
+                \end{bmatrix}
+                = S , i \in \{1, ... ,5\}
+            \]
+            minimum time coefficient: 6\\
+            maximum time coefficient: 30\\
+            number of pathways: 15\\
+
+        \item Round-Robin 1 Letter repeat for every X Letters of 1 Node\\
+            number of nodes: $L^{x}$ = n \\
+            timeslot number: $(L-1)^{x}$ \\
+            number of pathways: $L^{x} \times (L-1)^{X}/2$\\
+            representation in base L for matrix algebra\\
+            for each node k, available timeslots are exactly one digit
+            difference from k in base L\\
+            for an arbitrary i broken nodes, remove $i(L-1)^{x}$ pathways
+            \[
+                \mathscr{M}_{b \times n}= DW_{i}= S, i \in \{0, ... ,(L-1)^{x}\},
+                j \in \mathbb{Z}, 0\leq j \leq L^{x}-1\
+
+            \]
+            always multiple recievers for each timeslot so order within each
+            column does not matter
+
+            Example 2.2 (3 letters, x = 2): \\
+            number of nodes: $3^{2}$ = 9 \\
+            timeslot number: $2^{2} = 4$ \\
+            number of pathways: $3^{2} \times 2^{2}/2 = 18$\\
+            W = Adjacency Matrix of a Directed Graph, where each timeslot is the
+            row and each column is the node
+            \[
+                A =
+                \begin{bmatrix}
+                    1 & 0 & 0 & 0 & 1 & 2 & 0 & 1 & 2 \\
+                    2 & 2 & 1 & 4 & 3 & 3 & 3 & 4 & 5 \\
+                    3 & 4 & 5 & 5 & 5 & 4 & 7 & 6 & 6 \\
+                    6 & 7 & 8 & 6 & 7 & 8 & 8 & 8 & 7 \\
+                \end{bmatrix}
+            \]
+            \[
+                W_{8 \times 8}= \mathscr{M}\mid W_{A_{i,k},i}= 1, \neg(W_{A_{i,k},i}
+                ) = 0
+            \]
+            \[
+                \mathscr{M}_{b \times n}= DW = S, i \in \{1, ... ,n-1\}\\
+            \]
+
+        \item Round-Robin t Letter repeat (Hamming-distance) for every X Letters
+            of 1 Node\\
+            number of nodes: $L^{x}$ = n \\
+            timeslot number: $(L-1)^{x+t-1}$ \\
+            number of pathways: $L^{x}(L^{x}-1)^{x+t-1}/2$ \\
+            representation in base L for matrix algebra\\
+            for each node k, available timeslots are exactly t digit difference from
+            k in base, also the hamming distance L\\
+            \[
+                \mathscr{M}_{b \times n}= DW_{i}= S, i \in \{0, ... ,(L-1)^{x+t-1}
+                \}, j \in \mathbb{Z}, 0\leq j \leq (L-1)^{x+t-1}\
+
+            \]
+            always multiple recievers for each timeslot so order within each column
+            does not matter
+
+            Example 2.3 (4 letters, x = 3, t=2): \\
+            number of nodes: $4^{2}$ = 16 \\
+            timeslot number: $3^{3} = 27$ \\
+            number of pathways: $4^{2} \times 3^{3}/2 = 216$\\
+            W = Adjacency Matrix of a Directed Graph, where each timeslot is the
+            row and each column is the node
+            \[
+                A_{27 \times 27}=
+                \begin{bmatrix}
+                    5   & 4  & ... & 2  & 3   \\
+                    6   &    &     &    & 7   \\
+                    ... &    & ... &    & ... \\
+                    56  &    &     &    & 57  \\
+                    60  & 61 & ... & 59 & 58  \\
+                \end{bmatrix}
+            \]
+            \[
+                W_{27 \times 27}= \mathscr{M}\mid W_{A_{i,k},i}= 1, \neg(W_{A_{i,k},i}
+                ) = 0
+            \]
+            \[
+                \mathscr{M}_{b \times 27}= DW = S, i \in \{1, ... ,n-1\}\\
+            \]
+    \end{enumerate}
+    \section{Opera}
+    $V$ is represented as a matrix of the racks with the sending node as rows and
+    receiving node as columns
+    \[
+        V = \mathscr{M}_{n \times n}
+    \]
+    $D$ is the sending data represented as a matrix with b bits and n nodes
+    \[
+        D = \mathscr{M}_{b \times n}
+    \]
+    \begin{enumerate}
+        \item Direct Path \\
+            timeslots = maixmum number of hops for an arbitrary node\\
+            for an arbitrary i broken racks, maximum of n-1 hops\\
+            Example 3.1 (8 ToR Switches, 4 Rotor Circuit Switches): \\
+            A = represents a directed graph where each original row is the node
+            and each column is the rack
+            \[
+                A =
+                \begin{bmatrix}
+                    3 & 7 & 1 & 8 & 5 & 2 & 6 & 4 \\
+                    7 & 8 & 4 & 5 & 3 & 1 & 2 & 6 \\
+                    1 & 4 & 5 & 3 & 2 & 6 & 7 & 8 \\
+                    5 & 3 & 2 & 4 & 6 & 7 & 8 & 1 \\
+                    4 & 6 & 3 & 2 & 1 & 8 & 1 & 7 \\
+                    6 & 5 & 8 & 7 & 4 & 3 & 3 & 2 \\
+                    2 & 1 & 7 & 6 & 8 & 4 & 4 & 5 \\
+                    8 & 2 & 6 & 1 & 7 & 5 & 5 & 3 \\
+                \end{bmatrix}
+            \]
+            W = Adjacency Matrix of a Directed Graph, where each timeslot is the
+            row and each column is the node \\
+            \[
+                W_{i}= \mathscr{M}\mid W_{A_{i,k},i}= 1, \neg(W_{i_{A_{i,k},i}})
+                = 0
+            \]
+
+        \item (Uniform) Indirect Path \\
+            This uses BFS to find the optimal path from node a to node b. \\
+            Minimum of 1 hop and maximum of
+            $\left\lceil \frac{n}{2}\right\rceil$ hops\\
+            For an arbitrary i broken racks, at least no hop up to +i hops change\\
+            number of timeslots = maximum number of hops \\
+            Example 3.2: \\
+            For the same A as example 3.1, suppose Rack 2 is broken.
+            \begin{enumerate}
+                \item The 1-hop path [0, 7] (via rack 2) is now impossible.
+
+                \item BFS checks other neighbors of 0. Let's say it finds node 6
+                    (A[0][7] = 6, via rack 7).
+
+                \item BFS then checks neighbors of 6. (A[6][4] = 7). This is
+                    node 7, via rack 4.
+
+                \item Rack 4 is not broken, so this path is valid. Expected: [0,
+                    6, 7], Rack: [0, 7, 4] (or another valid 2-hop path)
+            \end{enumerate}
+
+        \item Weighted Indirect Path \\
+            This uses Dijkstra's Algorithm to find the optimal path from node a to
+            node b (not necessarily the shortest). \\
+            Minimum of 1 hop and maximum of
+            $\left\lceil \frac{n}{2}\right\rceil$ hops\\
+            timeslots = number of hops\\
+            For an arbitrary i broken racks, at least no hop up to +i hops
+            change\\
+            number of timeslots = maximum number of hops \\
+            $\theta_{k}$ is the weight of the list where for each element, it is
+            the weight of the corresponding rack (constant if equal weight) \\
+            broken racks can be represented by $\infty$ weight\\
+            Example 3.3: \\
+            \[
+                W_{8 \times 8}= \mathscr{M}\mid W_{A_{i,k},i}= \theta_{k}, \neg(W
+                _{A_{i,k},i}) = 0
+            \]
+    \end{enumerate}
+
+    \section{Sirius}
+    $\lambda_{1}, ..., \lambda_{i},...\lambda_{j}$ = wavelength, corresponding timeslot
+    \\
+    $P_{1}, ..., P_{k},...P_{l}$ = ports \\
+    $G_{1}, ... , G_{p} , ... G_{q}$ = gratings (AWGRs) \\
+    $N_{1}, ... , N_{s} , ... N_{r}$ = nodes \\
+    $r=j \times l$ (derivation is the pathways for an arbitrary node)\\
+    $jq=rl$ (derivation is the total number of pathways)\\
+    Then, it follows that $q = l^{2}$\\
+    \
+Parent Function: \\
+    \[
+        \mathscr{M}_{b \times n}= DW_{i} = S, i \in \{1, ... ,j\}\
+
+    \]
+    Source Matrix: $\mathscr{M}_{q \times l}\mid$
+    \[
+        W_{i} =
+    \]
+    Example 4.11 (2 wavelengths, 3 ports, 9 gratings, 6 nodes): \\
+    \[
+        A^{1} =
+        \begin{bmatrix}
+            1 & 7  & 13 \\
+            4 & 10 & 16 \\
+            2 & 8  & 14 \\
+            5 & 11 & 17 \\
+            3 & 9  & 15 \\
+            6 & 12 & 18 \\
+        \end{bmatrix}
+        , A^{2} =
+        \begin{bmatrix}
+            4 & 10 & 6  \\
+            1 & 7  & 13 \\
+            5 & 11 & 17 \\
+            2 & 8  & 14 \\
+            6 & 12 & 18 \\
+            3 & 9  & 15 \\
+        \end{bmatrix}
+    \]
+    \[
+        W^{1}_{8 \times 8}= \mathscr{M}\mid W_{A^1_{i,k},i}= 1, \neg(W_{A_{i,k},i}
+        ) = 0, W^{2}_{8 \times 8}= \mathscr{M}\mid W_{A^1_{i,k},i}= 1, \neg(W_{A_{i,k},i}
+        ) = 0
+    \]
+    Example 4.12 (3 wavelengths, 2 ports, 4 gratings, 6 nodes): \\
+    \[
+        A^{1} =
+        \begin{bmatrix}
+            1 & 7  \\
+            3 & 9  \\
+            5 & 11 \\
+            2 & 8  \\
+            4 & 10 \\
+            6 & 12 \\
+        \end{bmatrix}
+        , A^{2} =
+        \begin{bmatrix}
+            3 & 9  \\
+            5 & 11 \\
+            1 & 7  \\
+            4 & 10 \\
+            6 & 12 \\
+            2 & 8  \\
+        \end{bmatrix}
+        , A^{3} =
+        \begin{bmatrix}
+            5 & 11 \\
+            1 & 7  \\
+            3 & 9  \\
+            6 & 12 \\
+            2 & 8  \\
+            4 & 10 \\
+        \end{bmatrix}
+    \]
+\end{document}
