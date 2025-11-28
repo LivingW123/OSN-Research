@@ -56,7 +56,6 @@ def test_shale_waterfilling():
         print(f"  Link to Node {neighbor} (Noise {n}): {p:.2f}")
         
     print(f"\nTotal Allocated Power: {np.sum(allocation):.2f}")
-
 def test_waterfilling_timeslots():
     print("\n=== Testing Waterfilling with Multiple Timeslots ===")
     
@@ -98,24 +97,10 @@ def visualize_waterfilling(channels, total_power):
     n = len(channels)
     indices = np.arange(n)
     
-    # Calculate water level for plotting line
-    # The water level is constant for active channels: noise + power
-    # For inactive channels, it's just the noise level (which is above the water level)
-    # We can find the effective water level by looking at an active channel
-    # If no power is allocated, the water level is effectively 0 or below the min noise
-    
-    # A robust way to find the water level from the output for plotting:
-    # It is the value (noise + power) for any channel with power > 0.
-    # If all powers are 0, water level is effectively 0 (or undefined/below min noise).
-    
     active_mask = allocation > 1e-9 # use small epsilon for float comparison
     if np.any(active_mask):
         water_level = channels[active_mask][0] + allocation[active_mask][0]
     else:
-        water_level = 0 # Or max(channels) if we want to show it's too low? 
-                        # But strictly, if P_tot > 0, there must be some allocation unless P_tot is tiny?
-                        # Actually if P_tot > 0, at least one channel gets power.
-                        # If P_tot = 0, water_level is 0.
         pass
 
     plt.figure(figsize=(10, 6))
