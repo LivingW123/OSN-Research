@@ -57,6 +57,38 @@ def test_shale_waterfilling():
         
     print(f"\nTotal Allocated Power: {np.sum(allocation):.2f}")
 
+def test_waterfilling_timeslots():
+    print("\n=== Testing Waterfilling with Multiple Timeslots ===")
+    
+    # 3 Timeslots, 4 Channels
+    # Timeslot 0: Low noise
+    # Timeslot 1: High noise
+    # Timeslot 2: Mixed noise
+    channels = [
+        [5, 5, 5, 5],
+        [20, 20, 20, 20],
+        [5, 20, 5, 20]
+    ]
+    
+    total_power = 20 # Power per timeslot
+    
+    print(f"Channels (3 Timeslots x 4 Channels):\n{np.array(channels)}")
+    print(f"Total Power per Timeslot: {total_power}")
+    
+    allocations = waterfilling(channels, total_power)
+    
+    print("\nPower Allocation (Timeslots x Channels):")
+    print(allocations)
+    
+    # Verification
+    for t in range(3):
+        total_p = np.sum(allocations[t])
+        print(f"Timeslot {t} Total Power: {total_p:.2f}")
+        if abs(total_p - total_power) > 1e-5:
+             print(f"WARNING: Timeslot {t} power mismatch!")
+        else:
+             print(f"SUCCESS: Timeslot {t} power budget met.")
+
 def visualize_waterfilling(channels, total_power):
     """
     Visualizes the waterfilling power allocation using a stacked bar chart.
@@ -110,9 +142,10 @@ def visualize_waterfilling(channels, total_power):
 if __name__ == "__main__":
     test_opera_waterfilling()
     test_shale_waterfilling()
+    test_waterfilling_timeslots()
     
     # Visualization Example
-    print("\n=== Running Visualization ===")
-    example_channels = [10, 20, 30, 40, 15, 25, 35, 45]
-    example_power = 60
-    visualize_waterfilling(example_channels, example_power)
+    # print("\n=== Running Visualization ===")
+    # example_channels = [10, 20, 30, 40, 15, 25, 35, 45]
+    # example_power = 60
+    # visualize_waterfilling(example_channels, example_power)

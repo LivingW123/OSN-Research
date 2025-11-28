@@ -11,6 +11,36 @@ def waterfilling(channels, total_power):
     Returns:
         np.array: Allocated power for each channel.
     """
+    channels = np.array(channels)
+    
+    # Handle 1D case (single timeslot)
+    if channels.ndim == 1:
+        return _waterfilling_1d(channels, total_power)
+    
+    # Handle 2D case (multiple timeslots)
+    elif channels.ndim == 2:
+        num_timeslots, num_channels = channels.shape
+        allocations = np.zeros_like(channels, dtype=float)
+        
+        # Handle total_power being a scalar or a list/array
+        if np.isscalar(total_power):
+            powers = np.full(num_timeslots, total_power)
+        else:
+            powers = np.array(total_power)
+            if len(powers) != num_timeslots:
+                raise ValueError("Length of total_power must match number of timeslots.")
+        
+        for t in range(num_timeslots):
+            allocations[t] = _waterfilling_1d(channels[t], powers[t])
+            
+        return allocations
+    else:
+        raise ValueError("Channels must be 1D or 2D array.")
+
+def _waterfilling_1d(channels, total_power):
+    """
+    Helper function for single timeslot waterfilling.
+    """
     n = len(channels)
     noise = np.array(channels)
     
@@ -18,9 +48,7 @@ def waterfilling(channels, total_power):
     sorted_indices = np.argsort(noise)
     sorted_noise = noise[sorted_indices]
     
-    
     water_level = 0
-    active_channels_count = n
     
     for i in range(n):
         current_noise_sum = np.sum(sorted_noise[:n-i])
@@ -28,7 +56,6 @@ def waterfilling(channels, total_power):
         
         if potential_water_level > sorted_noise[n-i-1]:
             water_level = potential_water_level
-            active_channels_count = n - i
             break
             
     # Calculate power allocation: P_i = (Water Level - Noise_i)+
