@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from Waterfilling_Alg import waterfilling
 from Shale_Alg import RR2
 from Common_Alg import generate_random_latin_square
+from Sirius import generate_full_system
 
 def test_opera_waterfilling():
     print("\n=== Testing Waterfilling with Opera Context ===")
@@ -88,6 +89,65 @@ def test_waterfilling_timeslots():
         else:
              print(f"SUCCESS: Timeslot {t} power budget met.")
 
+def test_sirius_waterfilling():
+    print("\n=== Testing Waterfilling with Sirius Context ===")
+    
+    # Parameters for Sirius
+    wavelengths = 3
+    ports = 2
+    nodes = 6
+    
+    print(f"Generating Sirius Topology (W={wavelengths}, P={ports}, N={nodes})...")
+    As, Ws, P = generate_full_system(wavelengths, ports, nodes)
+    
+    num_timeslots = len(Ws)
+    print(f"Number of Timeslots: {num_timeslots}")
+    
+    # Construct channels for each timeslot
+    # In Sirius, W matrices are permutation matrices (size N x N)
+    # W[i][j] = 1 means there is a link from node i to node j
+    # Since it's a permutation, each node has exactly 1 outgoing link per timeslot (in W)
+    # So we have N links per timeslot.
+    
+    channels = []
+    
+    random.seed(100)
+    
+    for t, W in enumerate(Ws):
+        # Find active links
+        active_links = []
+        rows, cols = np.where(np.array(W) == 1)
+        
+        # Just to verify we have N links
+        if len(rows) != nodes:
+            print(f"WARNING: Timeslot {t} has {len(rows)} links, expected {nodes}")
+            
+        # Assign random noise to each active link
+        # We'll represent the channel state as just the noise level for now
+        # In a real scenario, we might map (src, dst) to a noise value
+        timeslot_noise = [random.randint(1, 20) for _ in range(nodes)]
+        channels.append(timeslot_noise)
+        
+        print(f"Timeslot {t} Active Links (Src->Dst): {list(zip(rows, cols))}")
+        print(f"  Noise Levels: {timeslot_noise}")
+        
+    total_power = 30
+    print(f"Total Power per Timeslot: {total_power}")
+    
+    allocations = waterfilling(channels, total_power)
+    
+    print("\nPower Allocation (Timeslots x Links):")
+    print(allocations)
+    
+    # Verification
+    for t in range(num_timeslots):
+        total_p = np.sum(allocations[t])
+        print(f"Timeslot {t} Total Power: {total_p:.2f}")
+        if abs(total_p - total_power) > 1e-5:
+             print(f"WARNING: Timeslot {t} power mismatch!")
+        else:
+             print(f"SUCCESS: Timeslot {t} power budget met.")
+
 def visualize_waterfilling(channels, total_power):
     """
     Visualizes the waterfilling power allocation using a stacked bar chart.
@@ -128,6 +188,7 @@ if __name__ == "__main__":
     test_opera_waterfilling()
     test_shale_waterfilling()
     test_waterfilling_timeslots()
+    test_sirius_waterfilling()
     
     # Visualization Example
     # print("\n=== Running Visualization ===")
