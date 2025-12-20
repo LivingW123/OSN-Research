@@ -328,6 +328,41 @@ def test_spray_short():
         else:
             print("NOTE: Paths share some nodes.")
 
+def test_ai_topology():
+    print("\n=== Testing AI Topology Generation ===")
+    from AI_Topology import evolve_topology, calculate_aspl, generate_random_topology
+    
+    N = 20
+    Degree = 3
+    
+    # 1. Generate a baseline random topology
+    baseline_topo = generate_random_topology(N, Degree)
+    baseline_aspl = calculate_aspl(baseline_topo)
+    print(f"Baseline Random Topology ASPL: {baseline_aspl:.4f}")
+    
+    # 2. Run AI Evolution
+    # We use a small population/generation count for speed in testing
+    evolved_topo = evolve_topology(N, Degree, population_size=10, generations=5)
+    evolved_aspl = calculate_aspl(evolved_topo)
+    
+    # 3. Verify Improvement
+    print(f"Evolved Topology ASPL: {evolved_aspl:.4f}")
+    
+    if evolved_topo is None:
+        print("ERROR: Evolution failed to produce a topology.")
+        return
+        
+    if evolved_aspl <= baseline_aspl:
+        print("SUCCESS: AI generated a topology with equal or better efficiency (lower/equal ASPL).")
+    else:
+        print("NOTE: AI ASPL is higher. This can happen with small generation counts or random chance.")
+        
+    # Verify connectivity (essential for a network)
+    if evolved_aspl != float('inf'):
+         print("SUCCESS: Evolved topology is connected.")
+    else:
+         print("ERROR: Evolved topology is disconnected!")
+
 if __name__ == "__main__":
     test_opera_waterfilling()
     test_shale_waterfilling()
@@ -335,6 +370,7 @@ if __name__ == "__main__":
     test_sirius_waterfilling()
     test_rr2_path()
     test_spray_short()
+    test_ai_topology()
     
     # Visualization Example
     # print("\n=== Running Visualization ===")
