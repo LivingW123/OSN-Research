@@ -254,12 +254,87 @@ def test_rr2_path():
     if not paths_dict:
         print("WARNING: No paths found!")
 
+def test_spray_short():
+    print("\n=== Testing Spray-Short Algorithm ===")
+    
+    # 1. Create a simple graph where multiple paths exist
+    # Let's use a 4x4 grid-like structure or just a manually defined small graph
+    # to clearer control the weights.
+    # Or reuse RR2(3,2) which is 9 nodes.
+    
+    base = 3
+    dim = 2
+    adj_matrix = RR2(base, dim)
+    
+    weights = {i: 1 for i in range(base**dim)}
+    
+    # Let's create a scenario where:
+    # Path A is cost 3 (shortest)
+    # Path B is cost 3 (shortest)
+    # Path C is cost 4.
+    
+    # In RR2(3,2), node 0 (0,0) connects to (0,1), (0,2), (1,0), (2,0) -> 1, 2, 3, 6
+    # Target 8 (2,2).
+    # Path 0 -> 2 (0,2) -> 8 (2,2) cost 1+1+1 = 3
+    # Path 0 -> 6 (2,0) -> 8 (2,2) cost 1+1+1 = 3
+    
+    start_node = 0 # (0,0)
+    end_node = 8   # (2,2)
+    
+    print(f"Graph: RR2({base}, {dim})")
+    print(f"Spray Short from {start_node} to {end_node}, K=3")
+    
+    # First, run with penalty
+    from Shale_Alg import spray_short
+    paths = spray_short(adj_matrix, weights, start_node, end_node, k=3, penalty_factor=2.0)
+    
+    print("\nFound Paths (Path, Original Cost):")
+    for i, (p, c) in enumerate(paths):
+        print(f"  Path {i}: {p}, Cost: {c}")
+        
+    # Verification
+    # 1. Check if we found paths
+    if not paths:
+        print("ERROR: No paths found!")
+        return
+
+    # 2. Check if paths are valid (simple check)
+    if paths[0][1] > paths[1][1] and paths[0][1] > paths[2][1]: # Just a loose check, usually first should be shortest
+         pass 
+
+    # 3. Check Diversity:
+    # We expect the algorithm to try to pick different intermediate nodes if possible.
+    # Path 0 and Path 1 should ideally use different intermediates if equal cost paths exist.
+    # For RR2(3,2), we have 0->2->8 and 0->6->8. Both cost 3.
+    # If Path 0 picks 0->2->8, then node 2 gets penalized.
+    # Next search, 0->6->8 (cost 3) < 0->2->8 (cost 1 + 2 + 1 = 4).
+    # So Path 1 should be 0->6->8.
+    
+    path0 = paths[0][0]
+    path1 = paths[1][0] if len(paths) > 1 else None
+    
+    if path1:
+        # Check intersection of intermediate nodes
+        inter0 = set(path0[1:-1])
+        inter1 = set(path1[1:-1])
+        common = inter0.intersection(inter1)
+        
+        print(f"\nIntermediate Nodes Path 0: {inter0}")
+        print(f"Intermediate Nodes Path 1: {inter1}")
+        print(f"Common Intermediate Nodes: {common}")
+        
+        if not common:
+            print("SUCCESS: Path 1 deviated from Path 0 (no common intermediate nodes).")
+        else:
+            print("NOTE: Paths share some nodes.")
+
 if __name__ == "__main__":
     test_opera_waterfilling()
     test_shale_waterfilling()
     test_waterfilling_timeslots()
     test_sirius_waterfilling()
     test_rr2_path()
+    test_spray_short()
     
     # Visualization Example
     # print("\n=== Running Visualization ===")

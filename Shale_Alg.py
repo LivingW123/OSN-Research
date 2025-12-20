@@ -9,6 +9,82 @@ from Common_Alg import(
     create_constrained_matrix
 )
 
+
+
+import heapq
+
+def dijkstra(adj_matrix, weights, start_node, end_node):
+    """
+    Standard Dijkstra's algorithm to find shortest path.
+    """
+    # Priority queue: (cost, current_node, path_associated)
+    queue = [(weights.get(start_node, 0), start_node, [start_node])]
+    visited = {} # node -> cost
+    
+    while queue:
+        cost, u, path = heapq.heappop(queue)
+        
+        if u == end_node:
+            return path, cost
+            
+        if u in visited and visited[u] <= cost:
+            continue
+        visited[u] = cost
+        
+        if u < len(adj_matrix):
+            neighbors = adj_matrix[u]
+            if neighbors is not None:
+                for v in neighbors:
+                    if v is not None:
+                        new_cost = cost + weights.get(v, 0)
+                        if v not in visited or new_cost < visited[v]:
+                            heapq.heappush(queue, (new_cost, v, path + [v]))
+    return None, float('inf')
+
+
+def spray_short(adj_matrix, weights, start_node, end_node, k=3, penalty_factor=2.0):
+    """
+    Finds k paths that are short but diverse (sprayed) to avoid congestion.
+    
+    Iteratively finds the shortest path, then penalizes the nodes used in that path
+    (multiplying their weight by penalty_factor) to encourage subsequent paths
+    to choose different routes.
+    
+    Args:
+        adj_matrix (list): Adjacency matrix.
+        weights (dict): Node weights.
+        start_node (int): Start node.
+        end_node (int): End node.
+        k (int): Number of paths to find.
+        penalty_factor (float): Multiplier for used node weights.
+        
+    Returns:
+        list[tuple]: List of (path, original_cost) tuples.
+    """
+    
+    # Work with a copy of weights so we can penalize without affecting original global state permanently
+    # But for multiple calls we need a local working copy.
+    current_weights = weights.copy()
+    
+    found_paths = []
+    
+    for _ in range(k):
+        path, cost = dijkstra(adj_matrix, current_weights, start_node, end_node)
+        
+        if path is None:
+            break
+            
+        # Calculate ORIGINAL cost for reporting
+        original_cost = sum(weights.get(n, 0) for n in path)
+        found_paths.append((tuple(path), original_cost))
+        
+        # Penalize nodes in this path (except start and end which are mandatory)
+        for node in path:
+            if node != start_node and node != end_node:
+                current_weights[node] = current_weights.get(node, 0) * penalty_factor
+                
+    return found_paths
+
 def RR1(node):
     return create_constrained_matrix(generate_simple_latin_square(node))
 
