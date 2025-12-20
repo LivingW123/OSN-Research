@@ -12,6 +12,66 @@ from Common_Alg import(
 def RR1(node):
     return create_constrained_matrix(generate_simple_latin_square(node))
 
+def RR2_path(adj_matrix, weights, start_node, end_node):
+    """
+    Finds the top 10 simple paths with the lowest costs between start_node and end_node.
+    
+    Args:
+        adj_matrix (list[list]): Adjacency matrix where adj_matrix[i] contains neighbors of node i.
+                                  May contain None values.
+        weights (dict): A dictionary mapping node index to its weight/cost.
+        start_node (int): The starting node index.
+        end_node (int): The ending node index.
+        
+    Returns:
+        dict: A dictionary where keys are tuples representing paths and values are their total costs.
+              Only the 10 paths with the lowest costs are returned.
+    """
+    
+    # Store all found simple paths and their costs
+    # List of tuples: (cost, path_tuple)
+    all_paths = []
+    
+    # Stack for DFS: (current_node, current_path, current_cost)
+    # path includes start_node
+    initial_cost = weights.get(start_node, 0)
+    stack = [(start_node, [start_node], initial_cost)]
+    
+    while stack:
+        curr, path, cost = stack.pop()
+        
+        if curr == end_node:
+            all_paths.append((cost, tuple(path)))
+            continue
+            
+        # Get neighbors
+        if curr < len(adj_matrix):
+            neighbors = adj_matrix[curr]
+            if neighbors is not None:
+                for neighbor in neighbors:
+                    if neighbor is not None and neighbor not in path:
+                         # Calculate new cost
+                        new_cost = cost + weights.get(neighbor, 0)
+                        
+                        # Create new path list
+                        new_path = path + [neighbor]
+                        
+                        stack.append((neighbor, new_path, new_cost))
+                        
+    # Sort by cost
+    all_paths.sort(key=lambda x: x[0])
+    
+    # Keep only top 10
+    top_10 = all_paths[:10]
+    
+    # Convert to expected dictionary format {path: cost}
+    result = {}
+    for cost, path in top_10:
+        result[path] = cost
+        
+    return result
+
+
 
 def RR2(base, dimension):
     """

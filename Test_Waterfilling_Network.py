@@ -2,7 +2,7 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 from Waterfilling_Alg import waterfilling
-from Shale_Alg import RR2
+from Shale_Alg import RR2, RR2_path
 from Common_Alg import generate_random_latin_square
 from Sirius import generate_full_system
 
@@ -184,11 +184,82 @@ def visualize_waterfilling(channels, total_power):
     
     plt.show()
 
+def test_rr2_path():
+    print("\n=== Testing RR2 Path Finding with Cost Limit ===")
+    
+    # 1. Generate RR2(3, 2) graph
+    # This creates a graph with 3^2 = 9 nodes (0 to 8).
+    # Each node represents a tuple, e.g., 0 -> (0,0), 1 -> (0,1), 2 -> (0,2)...
+    base = 3
+    dim = 2
+    adj_matrix = RR2(base, dim)
+    
+    print(f"Generated RR2({base}, {dim}) Adjacency Matrix.")
+    
+    # 2. Define Weights
+    # Let's assign weights such that some paths are clearly cheaper.
+    # Node weights: 0..8
+    # We'll make node 4 expensive to see if paths avoid it or it increases cost.
+    weights = {i: 1 for i in range(base**dim)}
+    weights[4] = 100 # High cost node
+    
+    print("Weights defined. Node 4 is expensive (100). Others are 1.")
+    
+    start_node = 0
+    end_node = 8
+    
+    print(f"Finding top 10 paths from Node {start_node} to Node {end_node}...")
+    
+    # 3. Call RR2_path
+    paths_dict = RR2_path(adj_matrix, weights, start_node, end_node)
+    
+    # 4. Verify Results
+    print(f"\nFound {len(paths_dict)} paths (capped at 10).")
+    
+    # Check if we got at most 10 paths
+    if len(paths_dict) > 10:
+        print("ERROR: More than 10 paths returned!")
+    else:
+        print("SUCCESS: Returned path count is within limit.")
+        
+    print("\nTop Paths and Costs:")
+    sorted_paths = sorted(paths_dict.items(), key=lambda item: item[1])
+    
+    prev_cost = -1
+    for path, cost in sorted_paths:
+        print(f"  Cost {cost}: {path}")
+        
+        # Verify valid path
+        is_valid = True
+        for i in range(len(path) - 1):
+            u, v = path[i], path[i+1]
+            if v not in adj_matrix[u]:
+                print(f"    ERROR: Invalid link {u} -> {v}")
+                is_valid = False
+        
+        # Verify cost calculation
+        # Cost = sum of weights of all nodes in path
+        calc_cost = sum(weights[n] for n in path)
+        if calc_cost != cost:
+             print(f"    ERROR: Calculated cost {calc_cost} != Returned cost {cost}")
+        
+        # Verify sorted order
+        if prev_cost != -1 and cost < prev_cost:
+            print("    ERROR: Paths are not sorted by cost!")
+        prev_cost = cost
+        
+        if 4 in path and cost < 100:
+             print("    WARNING: Path contains high cost node 4 but cost is low? (Should be > 100)")
+
+    if not paths_dict:
+        print("WARNING: No paths found!")
+
 if __name__ == "__main__":
     test_opera_waterfilling()
     test_shale_waterfilling()
     test_waterfilling_timeslots()
     test_sirius_waterfilling()
+    test_rr2_path()
     
     # Visualization Example
     # print("\n=== Running Visualization ===")
