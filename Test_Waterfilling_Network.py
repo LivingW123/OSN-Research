@@ -247,6 +247,11 @@ def test_spray_short():
     print(f"Graph: RR2({base}, {dim})")
     print(f"Spray Short from {start_node} to {end_node}, K=3")
     
+    from Opera_Alg import (
+    find_optimal_path_broken_racks,
+    find_least_cost_path_weighted_racks,
+    check_guard_band
+)
     from Shale_Alg import spray_short
     paths = spray_short(adj_matrix, weights, start_node, end_node, k=3, penalty_factor=2.0)
     
@@ -333,6 +338,30 @@ def test_ai_topology():
     else:
         print("ERROR: Evolved topology is disconnected!")
 
+def test_guard_band():
+    from Opera_Alg import check_guard_band
+    print("\n=== Testing Guard Band Check ===")
+    
+    slot_duration = 10.0
+    guard_band = 1.0
+    
+    # Synced (Arrivals within [0, 9.0])
+    arrivals_1 = [0.0, 5.0, 9.0, 10.0, 18.0, 20.0]
+    
+    synced, violations = check_guard_band(arrivals_1, slot_duration, guard_band)
+    if synced:
+        print("Case 1 (Synced): SUCCESS")
+    else:
+        print(f"Case 1 (Synced): FAILED. Violations: {violations}")
+        
+    #Desynced (Arrivals > 9.0 and < 10.0 mod 10)
+    arrivals_2 = [9.5, 19.1, 29.9]
+    synced, violations = check_guard_band(arrivals_2, slot_duration, guard_band)
+    if not synced and len(violations) == 3:
+        print(f"Case 2 (Desynced): SUCCESS. Caught violations: {violations}")
+    else:
+        print(f"Case 2 (Desynced): FAILED. Expected 3 violations, got synced={synced}, violations={violations}")
+
 if __name__ == "__main__":
     test_opera_waterfilling()
     test_shale_waterfilling()
@@ -340,4 +369,5 @@ if __name__ == "__main__":
     test_sirius_waterfilling()
     test_rr2_path()
     test_spray_short()
+    test_guard_band()
     test_ai_topology()

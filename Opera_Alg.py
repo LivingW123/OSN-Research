@@ -244,3 +244,41 @@ print("--- Case 3: Mixed cheap/expensive racks ---")
 cost, path = find_least_cost_path_weighted_racks(A, rack_weights_3, start, end)
 print(f"Path from {start} to {end}: {path}")
 print(f"Total cost: {cost}\n")
+
+
+def check_guard_band(arrival_times, slot_duration, guard_band_duration):
+    """
+    Checks if packet arrival times drift into the forbidden guard band region.
+    
+    Assumptions:
+    - Time is continuous.
+    - A time slot [0, T] has a 'safe' data window [0, T - G].
+    - The guard band is the interval (T - G, T) at the end of the slot.
+    - We check checks 't mod T' to see position within a cycle.
+    
+    Args:
+        arrival_times (list[float]): List of packet arrival timestamps.
+        slot_duration (float): Total duration of one time slot (T).
+        guard_band_duration (float): Duration of the guard band (G).
+        
+    Returns:
+        tuple (bool, list[float]):
+            - True if all arrivals are safe (synced).
+            - False if any arrival falls in the guard band.
+            - List of specific timestamps that caused a violation.
+    """
+    violations = []
+    is_synced = True
+    
+    safe_limit = slot_duration - guard_band_duration
+    
+    for t in arrival_times:
+        # Calculate offset within the current slot cycle
+        offset = t % slot_duration
+        
+        # Check if offset is in the guard band
+        if offset > safe_limit:
+            is_synced = False
+            violations.append(t)
+            
+    return is_synced, violations
