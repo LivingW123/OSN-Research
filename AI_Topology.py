@@ -93,9 +93,6 @@ def evolve_topology(num_nodes, target_degree, population_size=10, generations=20
     Evolves a network topology using PyGAD.
     Optimizes for minimizing ASPL with a penalty for deviating from target degree.
     """
-    if pygad is None:
-        print("Error: PyGAD not installed. Please install it using 'pip install pygad'.")
-        return None
 
     print(f"AI Evolving Topology (PyGAD) (N={num_nodes}, D={target_degree})...")
     
@@ -104,24 +101,19 @@ def evolve_topology(num_nodes, target_degree, population_size=10, generations=20
     def fitness_func(ga_instance, solution, solution_idx):
         adj = genome_to_adj(solution, num_nodes)
         
-        # 1. ASPL Score
+        # ASPL Score
         aspl = calculate_aspl(adj)
         
         if aspl == float('inf'):
             return 0.0001 # Extremely low fitness for disconnected graphs
             
-        # 2. Degree Penalty
+        # Degree Penalty
         degree_penalty = 0
         for neighbors in adj:
             d = len(neighbors)
             degree_penalty += abs(d - target_degree)
             
         # Fitness formula: roughly 1 / (ASPL + Penalty)
-        # We weigh degree penalty to ensure graph regularity is prioritized if desired
-        # or balance it.
-        # Let's say we want ASPL to be low (e.g. 2.5)
-        # If degree is off by 1 for every node (N=20), penalty is 20.
-        # We should scale penalty to be comparable or dominant if strict regularity is needed.
         
         combined_score = aspl + (degree_penalty * 0.5) 
         

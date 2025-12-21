@@ -293,7 +293,7 @@ def test_ai_topology():
     print(f"Baseline Random Topology ASPL: {baseline_aspl:.4f}")
     
     #AI Evo
-    evolved_topo = evolve_topology(N, Degree, population_size=10, generations=5)
+    evolved_topo = evolve_topology(N, Degree, population_size=10, generations=100)
     evolved_aspl = calculate_aspl(evolved_topo)
     
     #verify
@@ -308,9 +308,28 @@ def test_ai_topology():
     else:
         print("NOTE: AI ASPL is higher. This can happen with small generation counts or random chance.")
         
-    #connectivity
     if evolved_aspl != float('inf'):
         print("SUCCESS: Evolved topology is connected.")
+        
+        # Visualize
+        try:
+            import networkx as nx
+            import matplotlib.pyplot as plt
+            
+            G = nx.Graph()
+            for i, neighbors in enumerate(evolved_topo):
+                for n in neighbors:
+                    G.add_edge(i, n)
+            
+            plt.figure(figsize=(8, 8))
+            pos = nx.circular_layout(G)
+            nx.draw(G, pos, with_labels=True, node_color='skyblue', node_size=800, font_weight='bold')
+            plt.title(f"Evolved Topology (N={N}, D={Degree})\nASPL: {evolved_aspl:.4f}")
+            plt.show()
+            
+        except ImportError:
+            print("Visualization skipped (networkx or matplotlib not found).")
+            
     else:
         print("ERROR: Evolved topology is disconnected!")
 
