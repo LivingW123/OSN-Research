@@ -59,11 +59,6 @@ def test_shale_waterfilling():
     print(f"\nTotal Allocated Power: {np.sum(allocation):.2f}")
 def test_waterfilling_timeslots():
     print("\n=== Testing Waterfilling with Multiple Timeslots ===")
-    
-    # 3 Timeslots, 4 Channels
-    # Timeslot 0: Low noise
-    # Timeslot 1: High noise
-    # Timeslot 2: Mixed noise
     channels = [
         [5, 5, 5, 5],
         [20, 20, 20, 20],
@@ -103,12 +98,7 @@ def test_sirius_waterfilling():
     num_timeslots = len(Ws)
     print(f"Number of Timeslots: {num_timeslots}")
     
-    # Construct channels for each timeslot
-    # In Sirius, W matrices are permutation matrices (size N x N)
-    # W[i][j] = 1 means there is a link from node i to node j
-    # Since it's a permutation, each node has exactly 1 outgoing link per timeslot (in W)
-    # So we have N links per timeslot.
-    
+    # channels for each timeslot
     channels = []
     
     random.seed(100)
@@ -118,13 +108,11 @@ def test_sirius_waterfilling():
         active_links = []
         rows, cols = np.where(np.array(W) == 1)
         
-        # Just to verify we have N links
+        # N links
         if len(rows) != nodes:
             print(f"WARNING: Timeslot {t} has {len(rows)} links, expected {nodes}")
             
-        # Assign random noise to each active link
-        # We'll represent the channel state as just the noise level for now
-        # In a real scenario, we might map (src, dst) to a noise value
+        # Assign random noise
         timeslot_noise = [random.randint(1, 20) for _ in range(nodes)]
         channels.append(timeslot_noise)
         
@@ -187,19 +175,14 @@ def visualize_waterfilling(channels, total_power):
 def test_rr2_path():
     print("\n=== Testing RR2 Path Finding with Cost Limit ===")
     
-    # 1. Generate RR2(3, 2) graph
-    # This creates a graph with 3^2 = 9 nodes (0 to 8).
-    # Each node represents a tuple, e.g., 0 -> (0,0), 1 -> (0,1), 2 -> (0,2)...
+    #RR2 graph
     base = 3
     dim = 2
     adj_matrix = RR2(base, dim)
     
     print(f"Generated RR2({base}, {dim}) Adjacency Matrix.")
     
-    # 2. Define Weights
-    # Let's assign weights such that some paths are clearly cheaper.
-    # Node weights: 0..8
-    # We'll make node 4 expensive to see if paths avoid it or it increases cost.
+    # weights
     weights = {i: 1 for i in range(base**dim)}
     weights[4] = 100 # High cost node
     
@@ -210,13 +193,13 @@ def test_rr2_path():
     
     print(f"Finding top 10 paths from Node {start_node} to Node {end_node}...")
     
-    # 3. Call RR2_path
+    # RR2_path
     paths_dict = RR2_path(adj_matrix, weights, start_node, end_node)
     
-    # 4. Verify Results
+    # Results
     print(f"\nFound {len(paths_dict)} paths (capped at 10).")
     
-    # Check if we got at most 10 paths
+    # at most 10 paths
     if len(paths_dict) > 10:
         print("ERROR: More than 10 paths returned!")
     else:
@@ -228,7 +211,6 @@ def test_rr2_path():
     prev_cost = -1
     for path, cost in sorted_paths:
         print(f"  Cost {cost}: {path}")
-        
         # Verify valid path
         is_valid = True
         for i in range(len(path) - 1):
@@ -236,47 +218,28 @@ def test_rr2_path():
             if v not in adj_matrix[u]:
                 print(f"    ERROR: Invalid link {u} -> {v}")
                 is_valid = False
-        
-        # Verify cost calculation
-        # Cost = sum of weights of all nodes in path
+        # Verify cost
         calc_cost = sum(weights[n] for n in path)
         if calc_cost != cost:
-             print(f"    ERROR: Calculated cost {calc_cost} != Returned cost {cost}")
-        
-        # Verify sorted order
+            print(f"    ERROR: Calculated cost {calc_cost} != Returned cost {cost}")
+        # Verify order
         if prev_cost != -1 and cost < prev_cost:
             print("    ERROR: Paths are not sorted by cost!")
         prev_cost = cost
         
         if 4 in path and cost < 100:
-             print("    WARNING: Path contains high cost node 4 but cost is low? (Should be > 100)")
+            print("    WARNING: Path contains high cost node 4 but cost is low? (Should be > 100)")
 
     if not paths_dict:
         print("WARNING: No paths found!")
 
 def test_spray_short():
     print("\n=== Testing Spray-Short Algorithm ===")
-    
-    # 1. Create a simple graph where multiple paths exist
-    # Let's use a 4x4 grid-like structure or just a manually defined small graph
-    # to clearer control the weights.
-    # Or reuse RR2(3,2) which is 9 nodes.
-    
     base = 3
     dim = 2
     adj_matrix = RR2(base, dim)
     
     weights = {i: 1 for i in range(base**dim)}
-    
-    # Let's create a scenario where:
-    # Path A is cost 3 (shortest)
-    # Path B is cost 3 (shortest)
-    # Path C is cost 4.
-    
-    # In RR2(3,2), node 0 (0,0) connects to (0,1), (0,2), (1,0), (2,0) -> 1, 2, 3, 6
-    # Target 8 (2,2).
-    # Path 0 -> 2 (0,2) -> 8 (2,2) cost 1+1+1 = 3
-    # Path 0 -> 6 (2,0) -> 8 (2,2) cost 1+1+1 = 3
     
     start_node = 0 # (0,0)
     end_node = 8   # (2,2)
@@ -284,7 +247,6 @@ def test_spray_short():
     print(f"Graph: RR2({base}, {dim})")
     print(f"Spray Short from {start_node} to {end_node}, K=3")
     
-    # First, run with penalty
     from Shale_Alg import spray_short
     paths = spray_short(adj_matrix, weights, start_node, end_node, k=3, penalty_factor=2.0)
     
@@ -292,24 +254,14 @@ def test_spray_short():
     for i, (p, c) in enumerate(paths):
         print(f"  Path {i}: {p}, Cost: {c}")
         
-    # Verification
-    # 1. Check if we found paths
+    #valid path
     if not paths:
         print("ERROR: No paths found!")
         return
-
-    # 2. Check if paths are valid (simple check)
     if paths[0][1] > paths[1][1] and paths[0][1] > paths[2][1]: # Just a loose check, usually first should be shortest
          pass 
 
-    # 3. Check Diversity:
-    # We expect the algorithm to try to pick different intermediate nodes if possible.
-    # Path 0 and Path 1 should ideally use different intermediates if equal cost paths exist.
-    # For RR2(3,2), we have 0->2->8 and 0->6->8. Both cost 3.
-    # If Path 0 picks 0->2->8, then node 2 gets penalized.
-    # Next search, 0->6->8 (cost 3) < 0->2->8 (cost 1 + 2 + 1 = 4).
-    # So Path 1 should be 0->6->8.
-    
+    #Diversity:
     path0 = paths[0][0]
     path1 = paths[1][0] if len(paths) > 1 else None
     
@@ -335,17 +287,16 @@ def test_ai_topology():
     N = 20
     Degree = 3
     
-    # 1. Generate a baseline random topology
+    #baseline random topology
     baseline_topo = generate_random_topology(N, Degree)
     baseline_aspl = calculate_aspl(baseline_topo)
     print(f"Baseline Random Topology ASPL: {baseline_aspl:.4f}")
     
-    # 2. Run AI Evolution
-    # We use a small population/generation count for speed in testing
+    #AI Evo
     evolved_topo = evolve_topology(N, Degree, population_size=10, generations=5)
     evolved_aspl = calculate_aspl(evolved_topo)
     
-    # 3. Verify Improvement
+    #verify
     print(f"Evolved Topology ASPL: {evolved_aspl:.4f}")
     
     if evolved_topo is None:
@@ -357,11 +308,11 @@ def test_ai_topology():
     else:
         print("NOTE: AI ASPL is higher. This can happen with small generation counts or random chance.")
         
-    # Verify connectivity (essential for a network)
+    #connectivity
     if evolved_aspl != float('inf'):
-         print("SUCCESS: Evolved topology is connected.")
+        print("SUCCESS: Evolved topology is connected.")
     else:
-         print("ERROR: Evolved topology is disconnected!")
+        print("ERROR: Evolved topology is disconnected!")
 
 if __name__ == "__main__":
     test_opera_waterfilling()
@@ -371,9 +322,3 @@ if __name__ == "__main__":
     test_rr2_path()
     test_spray_short()
     test_ai_topology()
-    
-    # Visualization Example
-    # print("\n=== Running Visualization ===")
-    # example_channels = [10, 20, 30, 40, 15, 25, 35, 45]
-    # example_power = 60
-    # visualize_waterfilling(example_channels, example_power)
