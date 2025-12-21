@@ -362,6 +362,63 @@ def test_guard_band():
     else:
         print(f"Case 2 (Desynced): FAILED. Expected 3 violations, got synced={synced}, violations={violations}")
 
+def compare_waterfilling_performance():
+    print("\n=== Comparing Waterfilling Performance (Capacity vs Power) ===")
+    opera_noise = [5, 10, 5, 20, 100, 5, 10, 5]
+    shale_noise = [4, 1, 9, 8]
+    sirius_noise = [5, 15, 15, 6, 13, 12]
+    generic_noise = [5, 5, 5, 5]
+    
+    power_levels = np.linspace(10, 100, 10)
+    
+    results = {
+        "Opera": [],
+        "Shale": [],
+        "Sirius": [],
+        "Generic": []
+    }
+    
+    scenarios = [
+        ("Opera", opera_noise),
+        ("Shale", shale_noise),
+        ("Sirius", sirius_noise),
+        ("Generic", generic_noise)
+    ]
+    
+    for label, noises in scenarios:
+        for P in power_levels:
+            alloc = waterfilling(noises, P)
+            
+            # Calculate Capacity: sum(log2(1 + Pi/Ni))
+            alloc_arr = np.array(alloc)
+            noise_arr = np.array(noises)
+            
+            # Handle potential zeros in noise if any (though ours are >0)
+            with np.errstate(divide='ignore'):
+                snr = alloc_arr / noise_arr
+                
+            capacity = np.sum(np.log2(1 + snr))
+            results[label].append(capacity)
+            
+    # Visualize
+    try:
+        import matplotlib.pyplot as plt
+        
+        plt.figure(figsize=(10, 6))
+        for label, capacities in results.items():
+            plt.plot(power_levels, capacities, marker='o', label=label)
+            
+        plt.xlabel("Total Power Budget (P)")
+        plt.ylabel("Capacity (Shannon Sum Rate)")
+        plt.title("Waterfilling Performance Comparison: All 4 Contexts")
+        plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.7)
+        print("Displaying comparison plot...")
+        plt.show()
+        
+    except ImportError:
+        print("Comparison visualization skipped (matplotlib not found).")
+
 if __name__ == "__main__":
     test_opera_waterfilling()
     test_shale_waterfilling()
@@ -371,3 +428,4 @@ if __name__ == "__main__":
     test_spray_short()
     test_guard_band()
     test_ai_topology()
+    compare_waterfilling_performance()
