@@ -86,12 +86,6 @@ def find_path_2d_grid(B, start_node, end_node, max_hops=100):
         # Determine available neighbors at timeslot t
         # In a 2D Grid Opera, we alternate dimensions.
         if t % 2 == 0:
-            # Even timeslot: Row dimension neighbors
-            # For a rotor-based approach, at timeslot t, we move to a specific partner
-            # Let's assume the rotor moves by 1 each cycle in that dimension
-            # Or we could allow ALL partners in that dimension. 
-            # If "hops = timeslots", we take ONE hop per timeslot.
-            
             # Allow jumping to ANY node in the current row (Expanders/Rotor behavior)
             for c_new in range(B):
                 if c_new != c:
@@ -107,7 +101,6 @@ def find_path_2d_grid(B, start_node, end_node, max_hops=100):
                     if (v, t + 1) not in visited:
                         visited.add((v, t + 1))
                         queue.append((v, t + 1, path + [v]))
-                        
     return None, None
 
 

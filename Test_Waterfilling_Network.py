@@ -1,10 +1,18 @@
 import numpy as np
 import random
 import matplotlib.pyplot as plt
+import os
 from Waterfilling_Alg import waterfilling
-from Shale_Alg import RR2, RR2_path
+from Shale_Alg import RR2, RR2_path, spray_short
 from Common_Alg import generate_random_latin_square
 from Sirius import generate_full_system
+from AI_Topology import evolve_topology, generate_random_topology, calculate_aspl
+from Opera_Alg import find_optimal_path_broken_racks, find_path_2d
+
+# Ensure plots directory exists
+if not os.path.exists('plots'):
+    os.makedirs('plots')
+
 
 def test_opera_waterfilling():
     print("\n=== Testing Waterfilling with Opera Context ===")
@@ -147,10 +155,11 @@ def test_sirius_waterfilling():
 
     visualize_waterfilling(channels, total_power, title="Sirius Waterfilling Bottlenecks")
 
-def visualize_waterfilling(channels, total_power, title="Waterfilling Results"):
+def visualize_waterfilling(channels, total_power, title="Waterfilling Results", filename=None):
     """
     Visualizes the waterfilling power allocation using a stacked bar chart.
     Highlights bottlenecks (channels with 0 allocated power due to high noise).
+    Saves the image if filename is provided.
     """
     channels = np.array(channels)
     
@@ -165,7 +174,9 @@ def visualize_waterfilling(channels, total_power, title="Waterfilling Results"):
             
         for t in range(num_timeslots):
             # Recursively call for each timeslot
-            visualize_waterfilling(channels[t], powers[t], title=f"{title} - Timeslot {t}")
+            ts_suffix = f"_ts{t}"
+            ts_filename = f"plots/{filename}{ts_suffix}.png" if filename else None
+            visualize_waterfilling(channels[t], powers[t], title=f"{title} - Timeslot {t}", filename=ts_filename)
         return
 
     # --- 1D Logic ---
@@ -182,7 +193,7 @@ def visualize_waterfilling(channels, total_power, title="Waterfilling Results"):
         water_levels = channels[active_mask] + allocation[active_mask]
         water_level = np.mean(water_levels) 
     else:
-        water_level = 0 # Should only happen if total_power is 0 or error
+        water_level = 0 
 
     plt.figure(figsize=(10, 6))
     
@@ -212,7 +223,134 @@ def visualize_waterfilling(channels, total_power, title="Waterfilling Results"):
     plt.grid(axis='y', linestyle='--', alpha=0.5)
     
     plt.tight_layout()
+    if filename:
+        save_path = filename if filename.startswith('plots/') else f"plots/{filename}"
+        if not save_path.endswith('.png'):
+            save_path += '.png'
+        plt.savefig(save_path)
+        print(f"Saved plot to {save_path}")
     plt.show()
+
+def generate_diurnal_power(num_timeslots, baseline=30, amplitude=20):
+    """Generates a sinusoidal power budget matching a day/night cycle."""
+    t = np.arange(num_timeslots)
+    return baseline + amplitude * np.sin(2 * np.pi * t / num_timeslots)
+
+def test_diurnal_waterfilling():
+    print("\n=== Testing Diurnal Traffic Patterns ===")
+    num_timeslots = 24 # 24 hours
+    num_channels = 5
+    
+    # Noise levels per channel (constant for simplicity)
+    noise = [10, 15, 5, 20, 25]
+    channels = [noise for _ in range(num_timeslots)]
+    
+    # Diurnal power budget
+    power_budgets = generate_diurnal_power(num_timeslots)
+    
+    print(f"Power Budgets (24h): {power_budgets[:5]} ... {power_budgets[-5:]}")
+    
+    allocations = waterfilling(channels, power_budgets)
+    
+    # Calculate total capacity over time
+    capacities = []
+    for t in range(num_timeslots):
+        snr = allocations[t] / np.array(noise)
+        cap = np.sum(np.log2(1 + snr))
+        capacities.append(cap)
+        
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(num_timeslots), power_budgets, label='Power Budget (Diurnal)', color='orange', marker='o')
+    plt.plot(range(num_timeslots), capacities, label='Capacity (Sum Rate)', color='blue', marker='x')
+    plt.xlabel("Hour of Day")
+    plt.ylabel("Value")
+    plt.title("Diurnal Waterfilling Performance")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig("plots/diurnal_performance.png")
+    plt.show()
+    
+    # Visualize specific timeslots (Day vs Night)
+    # Noon (peak power) vs Midnight (low power)
+    visualize_waterfilling(noise, power_budgets[12], title="Diurnal Waterfilling - Noon (Peak)", filename="diurnal_noon")
+    visualize_waterfilling(noise, power_budgets[0], title="Diurnal Waterfilling - Midnight (Low)", filename="diurnal_midnight")
+
+def test_latency_scenarios():
+    print("\n=== Testing Latency Scenarios (Low vs High) ===")
+    
+    # 1. Opera Scenarios
+    print("\n[Opera]")
+    A = generate_random_latin_square(8)
+    noise = [random.randint(5, 15) for _ in range(8)]
+    
+    # Low Latency: 1-hop path exists
+    # High Latency: Must wait for multiple timeslots/hops
+    # In Waterfilling terms, we model this by the strictness of power allocation
+    # or the noise level perceived. High latency paths might have more accumulated noise.
+    
+    print("Opera Low Latency: Single-hop links.")
+    visualize_waterfilling(noise, 50, title="Opera - Low Latency", filename="opera_low_latency")
+    
+    print("Opera High Latency: Multiple links/hops (Accumulated Noise).")
+    high_noise = [n * 3 for n in noise] # Simulated noise across 3 hops
+    visualize_waterfilling(high_noise, 50, title="Opera - High Latency", filename="opera_high_latency")
+
+    # 2. Shale Scenarios
+    print("\n[Shale]")
+    adj = RR2(3, 2)
+    shale_noise = [5, 2, 8, 4]
+    
+    print("Shale Low Latency: Shortest Path Links.")
+    visualize_waterfilling(shale_noise, 40, title="Shale - Low Latency", filename="shale_low_latency")
+    
+    print("Shale High Latency: Sprayed Paths (Often longer, higher cost).")
+    spray_noise = [n * 1.5 for n in shale_noise]
+    visualize_waterfilling(spray_noise, 40, title="Shale - High Latency", filename="shale_high_latency")
+
+    # 3. Genetic Scenarios
+    print("\n[Genetic Algorithm]")
+    print("Genetic Low Latency: Evolved Topology (ASPL ~ 1.5).")
+    # Low ASPL means short paths -> less noise accumulation
+    visualize_waterfilling([5] * 6, 30, title="Genetic - Low Latency", filename="genetic_low_latency")
+    
+    print("Genetic High Latency: Random Topology (ASPL ~ 2.5).")
+    # High ASPL means longer paths -> more noise accumulation
+    visualize_waterfilling([15] * 6, 30, title="Genetic - High Latency", filename="genetic_high_latency")
+
+def test_genetic_algorithm_waterfilling():
+    print("\n=== Genetic Algorithm Waterfilling (Timeslots based on Nodes) ===")
+    num_nodes = 6
+    degree = 2
+    
+    # 1. Evolve Topology
+    best_adj = evolve_topology(num_nodes, degree, population_size=10, generations=20)
+    
+    # 2. Timeslots = Nodes
+    # At each timeslot 'i', we perform waterfilling on the links of Node 'i'
+    
+    all_timeslots_noise = []
+    
+    random.seed(99)
+    for i in range(num_nodes):
+        neighbors = best_adj[i]
+        num_links = len(neighbors)
+        
+        # Link noise for this node's neighborhood
+        node_noise = [random.randint(5, 25) for _ in range(num_links)]
+        
+        # Padding to keep consistent channel count for 2D waterfilling visualization 
+        # (Alternatively, we can call it for each node individually)
+        all_timeslots_noise.append(node_noise)
+        
+        print(f"Node {i} (Timeslot {i}) has {num_links} links: {neighbors}. Noise: {node_noise}")
+
+    # Since node degrees might vary, we call waterfilling individually per node
+    total_power = 40
+    print(f"\nPerforming Waterfilling for each Node (Total Power: {total_power})")
+    
+    for i, node_noise in enumerate(all_timeslots_noise):
+        visualize_waterfilling(node_noise, total_power, title=f"Genetic Algo - Node {i} Neighborhood", filename=f"genetic_node_{i}")
+
 
 def test_rr2_path():
     print("\n=== Testing RR2 Path Finding with Cost Limit ===")
@@ -462,12 +600,21 @@ def compare_waterfilling_performance():
         print("Comparison visualization skipped (matplotlib not found).")
 
 if __name__ == "__main__":
+    # Existing Tests
     test_opera_waterfilling()
     test_shale_waterfilling()
     test_waterfilling_timeslots()
     test_sirius_waterfilling()
+    
+    # New Scenario Tests
+    test_diurnal_waterfilling()
+    test_latency_scenarios()
+    test_genetic_algorithm_waterfilling()
+    
+    # Topology/Path Tests
     test_rr2_path()
     test_spray_short()
     test_guard_band()
     test_ai_topology()
     compare_waterfilling_performance()
+
