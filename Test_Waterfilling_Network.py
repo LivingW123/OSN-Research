@@ -29,6 +29,9 @@ def test_opera_waterfilling():
     else:
         print("NOTE: High cost rack received power (budget was large enough).")
 
+    # Visualize
+    visualize_waterfilling(rack_weights, total_power, title="Opera Waterfilling Bottlenecks")
+
 def test_shale_waterfilling():
     print("\n=== Testing Waterfilling with Shale Context ===")
     print("Generating Shale Topology (RR2, Base 3, Dim 2)...")
@@ -57,6 +60,9 @@ def test_shale_waterfilling():
         print(f"  Link to Node {neighbor} (Noise {n}): {p:.2f}")
         
     print(f"\nTotal Allocated Power: {np.sum(allocation):.2f}")
+
+    # Visualize
+    visualize_waterfilling(link_noise, total_power, title="Shale Waterfilling Bottlenecks")
 def test_waterfilling_timeslots():
     print("\n=== Testing Waterfilling with Multiple Timeslots ===")
     channels = [
@@ -83,6 +89,9 @@ def test_waterfilling_timeslots():
              print(f"WARNING: Timeslot {t} power mismatch!")
         else:
              print(f"SUCCESS: Timeslot {t} power budget met.")
+
+    # Visualize
+    visualize_waterfilling(channels, total_power, title="Timeslot Waterfilling")
 
 def test_sirius_waterfilling():
     print("\n=== Testing Waterfilling with Sirius Context ===")
@@ -136,40 +145,73 @@ def test_sirius_waterfilling():
         else:
              print(f"SUCCESS: Timeslot {t} power budget met.")
 
-def visualize_waterfilling(channels, total_power):
+    visualize_waterfilling(channels, total_power, title="Sirius Waterfilling Bottlenecks")
+
+def visualize_waterfilling(channels, total_power, title="Waterfilling Results"):
     """
     Visualizes the waterfilling power allocation using a stacked bar chart.
+    Highlights bottlenecks (channels with 0 allocated power due to high noise).
     """
+    channels = np.array(channels)
+    
+    # Handle 2D case (multiple timeslots)
+    if channels.ndim == 2:
+        num_timeslots = channels.shape[0]
+        # Handle scalar power vs per-timeslot power
+        if np.isscalar(total_power):
+            powers = [total_power] * num_timeslots
+        else:
+            powers = total_power
+            
+        for t in range(num_timeslots):
+            # Recursively call for each timeslot
+            visualize_waterfilling(channels[t], powers[t], title=f"{title} - Timeslot {t}")
+        return
+
+    # --- 1D Logic ---
     allocation = waterfilling(channels, total_power)
-    channels = np.array(channels) # Ensure numpy array for indexing
     n = len(channels)
     indices = np.arange(n)
     
-    active_mask = allocation > 1e-9 # use small epsilon for float comparison
+    active_mask = allocation > 1e-9
+    bottleneck_mask = ~active_mask
+    
+    # Calculate Water Level (Noise + Allocated Power) for active channels
     if np.any(active_mask):
-        water_level = channels[active_mask][0] + allocation[active_mask][0]
+        # All active channels should sum to the same level
+        water_levels = channels[active_mask] + allocation[active_mask]
+        water_level = np.mean(water_levels) 
     else:
-        pass
+        water_level = 0 # Should only happen if total_power is 0 or error
 
     plt.figure(figsize=(10, 6))
     
-    # Plot Noise Levels
-    plt.bar(indices, channels, label='Noise Level', color='lightgray', edgecolor='black')
-    
-    # Plot Allocated Power on top of Noise
-    plt.bar(indices, allocation, bottom=channels, label='Allocated Power', color='skyblue', edgecolor='black')
-    
-    # Plot Water Level Line
+    # 1. Plot Active Noise (Gray)
     if np.any(active_mask):
-        plt.axhline(y=water_level, color='red', linestyle='--', label=f'Water Level ({water_level:.2f})')
+        plt.bar(indices[active_mask], channels[active_mask], 
+                label='Noise (Active)', color='lightgray', edgecolor='black')
+        
+    # 2. Plot Bottleneck Noise (Red/Salmon) - These are the bottlenecks!
+    if np.any(bottleneck_mask):
+        plt.bar(indices[bottleneck_mask], channels[bottleneck_mask], 
+                label='Noise (Bottleneck)', color='salmon', edgecolor='black', hatch='//')
+
+    # 3. Plot Allocated Power (Blue)
+    if np.any(active_mask):
+        plt.bar(indices[active_mask], allocation[active_mask], bottom=channels[active_mask], 
+                label='Allocated Power', color='skyblue', edgecolor='black')
     
-    plt.xlabel('Channel Index')
+    # 4. Water Level Line
+    plt.axhline(y=water_level, color='blue', linestyle='--', linewidth=2, label=f'Water Level ({water_level:.2f})')
+    
+    plt.xlabel('Channel / Link Index')
     plt.ylabel('Power / Noise Level')
-    plt.title(f'Waterfilling Algorithm Results (Total Power: {total_power})')
+    plt.title(title)
     plt.xticks(indices, [f'Ch {i}' for i in indices])
     plt.legend()
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.grid(axis='y', linestyle='--', alpha=0.5)
     
+    plt.tight_layout()
     plt.show()
 
 def test_rr2_path():
