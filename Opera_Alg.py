@@ -6,6 +6,112 @@ from Common_Alg import(
     generate_random_latin_square
 )
 
+def find_path_2d(A, start_node, end_node, max_hops=100):
+    """
+    Finds a path in a 2D (time-slotted) Opera network where the number of hops 
+    required is exactly the number of timeslots elapsed.
+    
+    Args:
+        A (list[list[int]]): N x M matrix where A[i][t % M] is the neighbor 
+                             of node i at timeslot t.
+        start_node (int): 0-indexed start node.
+        end_node (int): 0-indexed destination node.
+        max_hops (int): Maximum number of hops/timeslots to search.
+        
+    Returns:
+        tuple (list[int], int): (path, num_hops) or (None, None)
+    """
+    num_nodes = len(A)
+    num_racks = len(A[0])
+    
+    # State: (current_node, timeslot)
+    # Use BFS to find the path with fewest hops (and thus fewest timeslots)
+    queue = collections.deque([(start_node, 0, [start_node])])
+    visited = set([(start_node, 0)])
+    
+    while queue:
+        u, t, path = queue.popleft()
+        
+        if u == end_node:
+            return path, t
+            
+        if t >= max_hops:
+            continue
+            
+        # At timeslot 't', the available neighbor is determined by column 't % num_racks'
+        neighbor_idx = A[u][t % num_racks] - 1
+        
+        # Move to the neighbor in the next timeslot
+        new_state = (neighbor_idx, t + 1)
+        if new_state not in visited:
+            visited.add(new_state)
+            queue.append((neighbor_idx, t + 1, path + [neighbor_idx]))
+            
+    return None, None
+
+
+def find_path_2d_grid(B, start_node, end_node, max_hops=100):
+    """
+    Two-Dimensional Opera on a B x B Grid.
+    Number of hops required is exactly the number of timeslots elapsed.
+    At each timeslot, we alternate between jumping in the row dimension 
+    and the column dimension.
+    
+    Args:
+        B (int): The side length of the grid (Total nodes N = B*B).
+        start_node (int): 0-indexed start node.
+        end_node (int): 0-indexed destination node.
+        max_hops (int): Maximum timeslots/hops.
+        
+    Returns:
+        tuple (list[int], int): (path, num_hops)
+    """
+    num_nodes = B * B
+    
+    # State: (current_node, timeslot)
+    queue = collections.deque([(start_node, 0, [start_node])])
+    visited = set([(start_node, 0)])
+    
+    while queue:
+        u, t, path = queue.popleft()
+        
+        if u == end_node:
+            return path, t
+            
+        if t >= max_hops:
+            continue
+            
+        r, c = divmod(u, B)
+        
+        # Determine available neighbors at timeslot t
+        # In a 2D Grid Opera, we alternate dimensions.
+        if t % 2 == 0:
+            # Even timeslot: Row dimension neighbors
+            # For a rotor-based approach, at timeslot t, we move to a specific partner
+            # Let's assume the rotor moves by 1 each cycle in that dimension
+            # Or we could allow ALL partners in that dimension. 
+            # If "hops = timeslots", we take ONE hop per timeslot.
+            
+            # Allow jumping to ANY node in the current row (Expanders/Rotor behavior)
+            for c_new in range(B):
+                if c_new != c:
+                    v = r * B + c_new
+                    if (v, t + 1) not in visited:
+                        visited.add((v, t+1))
+                        queue.append((v, t+1, path + [v]))
+        else:
+            # Odd timeslot: Column dimension neighbors
+            for r_new in range(B):
+                if r_new != r:
+                    v = r_new * B + c
+                    if (v, t + 1) not in visited:
+                        visited.add((v, t + 1))
+                        queue.append((v, t + 1, path + [v]))
+                        
+    return None, None
+
+
+
 def find_optimal_path_broken_racks(A, broken_racks, start_tor, end_tor):
     """
     Finds the shortest path (least hops) given a set of broken *racks* (columns).
@@ -39,11 +145,9 @@ def find_optimal_path_broken_racks(A, broken_racks, start_tor, end_tor):
     for i in range(num_nodes):  # i is the 0-indexed current node
         for j in range(num_racks):  # j is the rack (column)
             
-            # --- THIS IS THE NEW LOGIC ---
             # If the rack 'j' is in our broken set, skip this connection
             if j in broken_racks_set:
                 continue
-            # --- END OF NEW LOGIC ---
             
             # Get the neighbor's value (which is 1-indexed)
             neighbor_val = A[i][j]
@@ -59,19 +163,16 @@ def find_optimal_path_broken_racks(A, broken_racks, start_tor, end_tor):
         return [start_tor]
 
     # --- 3. Initialize for BFS ---
-    # (Note: We no longer have a 'broken_tors' set for nodes)
     visited = set()
     queue = collections.deque()
     
-    # Check if start/end nodes are even reachable (e.g. isolated)
-    # This isn't strictly necessary but good practice.
     if start_tor not in adj_list:
         return None
 
     queue.append((start_tor, [start_tor])) # (current_node, path_to_this_node)
     visited.add(start_tor)
     
-    # --- 4. Run BFS (This part is identical to before) ---
+    # --- 4. Run BFS ---
     while queue:
         current_tor, path = queue.popleft()
         
@@ -86,199 +187,92 @@ def find_optimal_path_broken_racks(A, broken_racks, start_tor, end_tor):
     # --- 5. No Path Found ---
     return None
 
-# The 8x8 matrix A from your image
-A = generate_random_latin_square(8)
-
-start = 0
-end = 7 # (Which is node value 8 in the matrix)
-
-# --- Case 1: No broken racks ---
-path = find_optimal_path_broken_racks(A, set(), start, end)
-print(f"Case 1: No broken racks")
-print(f"Path from {start} to {end}: {path}")
-# Expected: [0, 7]
-
-print("-" * 20)
-
-# --- Case 2:  ---
-broken = {3,4,5} 
-path = find_optimal_path_broken_racks(A, broken, start, end)
-print(f"Case 2: Rack 3,4,5 is broken")
-print(f"Path from {start} to {end}: {path}")
-
-print("-" * 20)
-
-# --- Case 3 ---
-broken = {3,4,5,6,7} 
-path = find_optimal_path_broken_racks(A, broken, start, end)
-print(f"Case 3: Rack 1,2,5,6,7 is broken")
-print(f"Path from {start} to {end}: {path}")
-
-print("------------------------------------------------------------")
-
-
-
-
-# --- Weighted Graph ---
-
-
 def find_least_cost_path_weighted_racks(A, rack_weights, start_tor, end_tor):
     """
     Finds the *least cost* path given weighted racks.
     Uses Dijkstra's algorithm.
-    
-    Args:
-        A (list[list[int]]): 
-            The N x M matrix. A[i][j] = k means node 'i'
-            connects to node 'k' (1-indexed) via rack 'j'.
-            
-        rack_weights (list[float]): 
-            A list of costs for each rack. 
-            Use float('inf') to represent a "broken" rack.
-            
-        start_tor (int): The 0-indexed starting ToR.
-        end_tor (int): The 0-indexed destination ToR.
-        
-    Returns:
-        tuple (float, list[int]): 
-            A tuple of (total_cost, path_list)
-            or (float('inf'), None) if no path exists.
     """
     
     num_nodes = len(A)
     num_racks = len(A[0])
     
-    # --- 1. Build a WEIGHTED Adjacency List ---
-    # The format will be: {node: [(cost, neighbor), (cost, neighbor), ...]}
     adj_list = {i: [] for i in range(num_nodes)}
     
     for i in range(num_nodes):  # i is the 0-indexed current node
         for j in range(num_racks):  # j is the rack (column)
-            
             cost = rack_weights[j]
-            
-            # If the rack is "broken" (infinite cost), skip it
             if cost == float('inf'):
                 continue
-                
             neighbor_val = A[i][j]
             neighbor_idx = neighbor_val - 1
-            
-            # Don't add self-loops if they don't help
             if neighbor_idx != i:
                 adj_list[i].append((cost, neighbor_idx))
 
-    # --- 2. Handle Invalid Inputs ---
     if start_tor == end_tor:
-        return (0, [start_tor]) # Cost is 0
+        return (0, [start_tor])
 
-    # --- 3. Initialize for Dijkstra's Algorithm ---
-    
-    # Priority queue stores: (current_total_cost, current_node, path_so_far)
-    # heapq always pops the tuple with the *smallest* first element (total_cost)
     pq = [(0, start_tor, [start_tor])] 
-    
-    # 'visited' stores nodes for which we have found the *final* cheapest path
     visited = set()
     
-    # --- 4. Run Dijkstra's ---
     while pq:
-        # Get the node with the lowest cost from the start
         current_cost, current_tor, path = heapq.heappop(pq)
-        
-        # If we've already found a cheaper path to this node, skip
         if current_tor in visited:
             continue
-            
         visited.add(current_tor)
 
-        # --- 5. Goal Check ---
         if current_tor == end_tor:
-            # Found the cheapest path!
             return (current_cost, path)
 
-        # --- 6. Explore Neighbors ---
         for edge_cost, neighbor in adj_list[current_tor]:
             if neighbor not in visited:
                 new_cost = current_cost + edge_cost
                 new_path = path + [neighbor]
-                # Add the new path to the priority queue
                 heapq.heappush(pq, (new_cost, neighbor, new_path))
 
-    # --- 7. No Path Found ---
     return (float('inf'), None)
-
-# --- EXAMPLE USAGE ---
-
-A = generate_random_latin_square(8)
-
-start = 0
-end = 7
-
-# --- Case 1: All racks have a simple cost ---
-rack_weights_1 = [10, 10, 10, 15, 10, 10, 10, 10]
-print("--- Case 1: Rack 3 is expensive ---")
-cost, path = find_least_cost_path_weighted_racks(A, rack_weights_1, start, end)
-print(f"Path from {start} to {end}: {path}")
-print(f"Total cost: {cost}\n")
-
-
-print("-" * 20)
-
-# --- Case 2: Make the 1-hop path "broken" ---
-# A "broken" rack just has infinite cost
-rack_weights_2 = [1, 1, 1, float('inf'), 1, 1, 1, 1]
-
-print("--- Case 2: Rack 3 is 'broken' (cost=inf) ---")
-cost, path = find_least_cost_path_weighted_racks(A, rack_weights_2, start, end)
-print(f"Path from {start} to {end}: {path}")
-print(f"Total cost: {cost}\n")
-
-print("-" * 20)
-
-# --- Case 3: A more complex cost scenario ---
-rack_weights_3 = [5, 20, 5, 5, 20, 20, 5, 20]
-# Racks 0, 2, 3, 6 are cheap (cost 5)
-# Racks 1, 4, 5, 7 are expensive (cost 20)
-print("--- Case 3: Mixed cheap/expensive racks ---")
-cost, path = find_least_cost_path_weighted_racks(A, rack_weights_3, start, end)
-print(f"Path from {start} to {end}: {path}")
-print(f"Total cost: {cost}\n")
-
 
 def check_guard_band(arrival_times, slot_duration, guard_band_duration):
     """
     Checks if packet arrival times drift into the forbidden guard band region.
-    
-    Assumptions:
-    - Time is continuous.
-    - A time slot [0, T] has a 'safe' data window [0, T - G].
-    - The guard band is the interval (T - G, T) at the end of the slot.
-    - We check checks 't mod T' to see position within a cycle.
-    
-    Args:
-        arrival_times (list[float]): List of packet arrival timestamps.
-        slot_duration (float): Total duration of one time slot (T).
-        guard_band_duration (float): Duration of the guard band (G).
-        
-    Returns:
-        tuple (bool, list[float]):
-            - True if all arrivals are safe (synced).
-            - False if any arrival falls in the guard band.
-            - List of specific timestamps that caused a violation.
     """
     violations = []
     is_synced = True
-    
     safe_limit = slot_duration - guard_band_duration
-    
     for t in arrival_times:
-        # Calculate offset within the current slot cycle
         offset = t % slot_duration
-        
-        # Check if offset is in the guard band
         if offset > safe_limit:
             is_synced = False
             violations.append(t)
-            
     return is_synced, violations
+
+# --- EXAMPLE USAGE ---
+if __name__ == "__main__":
+    A = generate_random_latin_square(8)
+    start = 0
+    end = 7
+
+    print("--- Testing Shortest Path (Static) ---")
+    path = find_optimal_path_broken_racks(A, set(), start, end)
+    print(f"Path: {path}\n")
+
+    print("--- Testing Weighted Path (Static) ---")
+    rack_weights = [5, 20, 5, 5, 20, 20, 5, 20]
+    cost, path = find_least_cost_path_weighted_racks(A, rack_weights, start, end)
+    print(f"Cost: {cost}, Path: {path}\n")
+
+    print("=== Testing 2D Opera (Hops = Timeslots) ===")
+    path_2d, hops_2d = find_path_2d(A, start, end)
+    if path_2d:
+        print(f"Space-Time Path: {path_2d}, Hops/Timeslots: {hops_2d}")
+    else:
+        print("No Space-Time path found.")
+
+    print("\n=== Testing 2D Grid Opera (B=4, N=16) ===")
+    B_grid = 4
+    s_grid = 0  # (0,0)
+    d_grid = 15 # (3,3)
+    path_grid, hops_grid = find_path_2d_grid(B_grid, s_grid, d_grid)
+    if path_grid:
+        print(f"Grid Path: {path_grid}")
+        print(f"Hops/Timeslots: {hops_grid}")
+
