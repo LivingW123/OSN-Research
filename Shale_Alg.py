@@ -63,7 +63,6 @@ def spray_short(adj_matrix, weights, start_node, end_node, k=3, penalty_factor=2
     """
     
     # Work with a copy of weights so we can penalize without affecting original global state permanently
-    # But for multiple calls we need a local working copy.
     current_weights = weights.copy()
     
     found_paths = []
@@ -104,29 +103,25 @@ def RR2_path(adj_matrix, weights, start_node, end_node):
               Only the 10 paths with the lowest costs are returned.
     """
     
-    # Store all found simple paths and their costs
-    # List of tuples: (cost, path_tuple)
+    # Store all found (cost, path_tuple)
     all_paths = []
     
     # Stack for DFS: (current_node, current_path, current_cost)
-    # path includes start_node
     initial_cost = weights.get(start_node, 0)
     stack = [(start_node, [start_node], initial_cost)]
     
     while stack:
         curr, path, cost = stack.pop()
-        
         if curr == end_node:
             all_paths.append((cost, tuple(path)))
             continue
-            
         # Get neighbors
         if curr < len(adj_matrix):
             neighbors = adj_matrix[curr]
             if neighbors is not None:
                 for neighbor in neighbors:
                     if neighbor is not None and neighbor not in path:
-                         # Calculate new cost
+                        # Calculate new cost
                         new_cost = cost + weights.get(neighbor, 0)
                         
                         # Create new path list
