@@ -25,15 +25,22 @@ def generate_skewed_traffic(num_nodes, skew_factor=2):
             traffic[i, j] = 1.0 / (abs(i - j) ** skew_factor + 1)
     return traffic
 
-def calculate_topology_capacity(adj_list, traffic_matrix, total_power=50):
+def calculate_topology_capacity(adj_list, traffic_matrix, total_power=50, architecture_type=None):
     """
     Simulates network capacity for a given topology and traffic demand.
     Uses path-length as noise and Waterfilling for power allocation.
+    
+    Rules implemented:
+    - Weight Normalization: For each source node, the sum of path-lengths (noise) 
+      to all destinations is normalized to a constant 'Power Level' target.
+    - Opera-specific: If architecture_type="opera", the number of timeslots equals the 
+      number of hops. This results in the capacity being divided by the path length for each flow.
     """
     from Waterfilling_Alg import waterfilling
     import collections
     
     num_nodes = len(adj_list)
+    weight_sum_target = num_nodes * 10.0 # Standard 'Power Level' target for sum of weights per node
     
     # 1. Find all-pairs shortest paths to determine 'noise' (hops = noise)
     def get_all_pairs_dist(adj):
@@ -53,37 +60,57 @@ def calculate_topology_capacity(adj_list, traffic_matrix, total_power=50):
 
     dist_matrix = get_all_pairs_dist(adj_list)
     
-    # 2. Map logical traffic flows to physical characteristics
-    # Logical channels are SRC-DST pairs with traffic > 0
+    # 2. Map logical traffic flows and Normalize per-node weights
     channels_noise = []
     demands = []
+    flow_metas = [] # Store (src, dst, original_hops)
     
     for i in range(num_nodes):
+        # Calculate current sum of weights for source i
+        current_sum = 0
+        for j in range(num_nodes):
+            if i == j: continue
+            hops = dist_matrix[i, j] if dist_matrix[i, j] != float('inf') else 100
+            current_sum += hops
+        
+        # Scale factor to hit the 'Power Level' target
+        scale_factor = weight_sum_target / current_sum if current_sum > 0 else 1.0
+        
         for j in range(num_nodes):
             if i == j: continue
             demand = traffic_matrix[i, j]
             if demand > 0:
-                # Noise is path length. If disconnected, noise is huge.
-                noise = dist_matrix[i, j] if dist_matrix[i, j] != float('inf') else 100
-                channels_noise.append(noise)
+                original_hops = dist_matrix[i, j] if dist_matrix[i, j] != float('inf') else 100
+                normalized_noise = original_hops * scale_factor
+                channels_noise.append(normalized_noise)
                 demands.append(demand)
+                flow_metas.append((i, j, original_hops))
     
     if not channels_noise:
         return 0
         
     # 3. Perform Waterfilling
-    # Note: Traditional waterfilling assumes equal weight. 
-    # Here we can weight by demand or adjust noise. 
-    # Let's simplify: Capacity = sum(log2(1 + P_i / Noise_i)) weighted by demand.
-    
     allocations = waterfilling(channels_noise, total_power)
     
+    # 4. Sum up Weighted Capacity
     capacity = 0
-    for i in range(len(channels_noise)):
-        p = allocations[i]
-        n = channels_noise[i]
+    for idx in range(len(channels_noise)):
+        p = allocations[idx]
+        n = channels_noise[idx]
+        demand = demands[idx]
+        src, dst, hops = flow_metas[idx]
+        
         if p > 0:
-            # Shannon capacity: W * log2(1 + SNR)
-            capacity += demands[i] * np.log2(1 + p/n)
+            # Shannon capacity: demand * log2(1 + SNR)
+            rate = demand * np.log2(1 + p/n)
+            
+            # Special rule: for Opera (and potentially others), 1 slot per hop
+            # Capacity is reduced by factor of hops as it takes H slots to deliver the traffic
+            if architecture_type == "opera":
+                capacity += rate / max(1, hops)
+            else:
+                # For Sirius (slotted) or others, handles slotting in its own generation phase
+                # or assumes cut-through / parallel delivery if not specified
+                capacity += rate
             
     return capacity

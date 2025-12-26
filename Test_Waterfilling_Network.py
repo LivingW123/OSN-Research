@@ -639,8 +639,9 @@ def compare_waterfilling_performance():
     results = {name: [] for name in architectures}
     
     for name, adj in architectures.items():
+        arch_type = "opera" if "Opera" in name else None
         for P in power_levels:
-            cap = calculate_topology_capacity(adj, traffic, total_power=P)
+            cap = calculate_topology_capacity(adj, traffic, total_power=P, architecture_type=arch_type)
             results[name].append(cap)
             
     # Visualize
