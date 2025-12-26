@@ -1,12 +1,12 @@
 import random
 import collections
 import numpy as np
-
-# Try importing pygad, but don't crash if it fails (though we expect it to be installed)
 try:
     import pygad
 except ImportError:
     pygad = None
+
+from Traffic_Benchmarks import calculate_topology_capacity, generate_uniform_traffic, generate_hotspot_traffic, generate_skewed_traffic
 
 def calculate_aspl(adj_matrix):
     """
@@ -74,11 +74,20 @@ def generate_random_topology(num_nodes, degree):
         
     return [list(s) for s in adj_matrix]
 
-def genome_to_adj(genome, num_nodes):
+def genome_to_adj(genome, num_nodes, frozen_backbone=None):
     """
     Converts a flat genome (representing upper triangle of adj matrix) to adjacency list.
+    If frozen_backbone is provided, those edges are always included.
     """
     adj = [set() for _ in range(num_nodes)]
+    
+    # Add frozen edges if they exist
+    if frozen_backbone:
+        for i, neighbors in enumerate(frozen_backbone):
+            for n in neighbors:
+                adj[i].add(n)
+                adj[n].add(i)
+
     idx = 0
     for i in range(num_nodes):
         for j in range(i + 1, num_nodes):
@@ -88,39 +97,51 @@ def genome_to_adj(genome, num_nodes):
             idx += 1
     return [list(x) for x in adj]
 
-def evolve_topology(num_nodes, target_degree, population_size=10, generations=20):
+def evolve_topology(num_nodes, target_degree, population_size=10, generations=20, 
+                    traffic_type="uniform", frozen_backbone=None):
     """
     Evolves a network topology using PyGAD.
-    Optimizes for minimizing ASPL with a penalty for deviating from target degree.
+    Optimizes for a mix of minimizing ASPL and maximizing Shannon Capacity.
     """
 
-    print(f"AI Evolving Topology (PyGAD) (N={num_nodes}, D={target_degree})...")
+    print(f"AI Evolving Topology (PyGAD) (N={num_nodes}, D={target_degree}, Traffic={traffic_type})...")
     
+    # Generate Traffic Matrix based on type
+    if traffic_type == "uniform":
+        traffic_matrix = generate_uniform_traffic(num_nodes)
+    elif traffic_type == "hotspot":
+        traffic_matrix = generate_hotspot_traffic(num_nodes, hotspot_nodes=[0])
+    elif traffic_type == "skewed":
+        traffic_matrix = generate_skewed_traffic(num_nodes)
+    else:
+        traffic_matrix = generate_uniform_traffic(num_nodes)
+
     num_genes = num_nodes * (num_nodes - 1) // 2
     
     def fitness_func(ga_instance, solution, solution_idx):
-        adj = genome_to_adj(solution, num_nodes)
+        adj = genome_to_adj(solution, num_nodes, frozen_backbone=frozen_backbone)
         
-        # ASPL Score
+        # 1. ASPL Score
         aspl = calculate_aspl(adj)
-        
         if aspl == float('inf'):
             return 0.0001 # Extremely low fitness for disconnected graphs
             
-        # Degree Penalty
+        # 2. Capacity Score (Direct performance metric)
+        capacity = calculate_topology_capacity(adj, traffic_matrix)
+        
+        # 3. Degree Penalty
         degree_penalty = 0
         for neighbors in adj:
             d = len(neighbors)
             degree_penalty += abs(d - target_degree)
             
-        # Fitness formula: roughly 1 / (ASPL + Penalty)
+        # Composite Fitness: 
+        # Increase fitness for high capacity and low ASPL
+        # Reduce for degree deviation
         
-        combined_score = aspl + (degree_penalty * 0.5) 
+        fitness = (capacity * 0.5) + (1.0 / aspl) - (degree_penalty * 0.2)
         
-        if combined_score == 0:
-            return 99999
-            
-        return 1.0 / combined_score
+        return max(fitness, 0.0001)
 
     ga_instance = pygad.GA(num_generations=generations,
                            num_parents_mating=int(population_size * 0.4),
@@ -128,9 +149,9 @@ def evolve_topology(num_nodes, target_degree, population_size=10, generations=20
                            sol_per_pop=population_size,
                            num_genes=num_genes,
                            init_range_low=0,
-                           init_range_high=2, # Exclusive, so 0 or 1
+                           init_range_high=2, 
                            gene_type=int,
-                           mutation_percent_genes=5,
+                           mutation_percent_genes=10, # Slightly higher mutation to explore
                            suppress_warnings=True)
 
     ga_instance.run()
@@ -139,9 +160,10 @@ def evolve_topology(num_nodes, target_degree, population_size=10, generations=20
     
     print(f"Evolution Complete. Best Fitness: {solution_fitness:.4f}")
     
-    best_adj = genome_to_adj(solution, num_nodes)
+    best_adj = genome_to_adj(solution, num_nodes, frozen_backbone=frozen_backbone)
     actual_aspl = calculate_aspl(best_adj)
-    print(f"Best ASPL: {actual_aspl:.4f}")
+    final_cap = calculate_topology_capacity(best_adj, traffic_matrix)
+    print(f"Best ASPL: {actual_aspl:.4f} | Final Capacity: {final_cap:.4f}")
     
     return best_adj
 

@@ -3,10 +3,11 @@ import random
 import matplotlib.pyplot as plt
 import os
 from Waterfilling_Alg import waterfilling
-from Shale_Alg import RR2, RR2_path, spray_short
+from Shale_Alg import RR1, RR2, RR2_path, spray_short
 from Common_Alg import generate_random_latin_square
 from Sirius import generate_full_system
 from AI_Topology import evolve_topology, generate_random_topology, calculate_aspl
+from Traffic_Benchmarks import calculate_topology_capacity, generate_uniform_traffic
 from Opera_Alg import find_optimal_path_broken_racks, find_path_2d
 
 # Ensure plots directory exists
@@ -592,78 +593,82 @@ def test_guard_band():
         print(f"Case 2 (Desynced): FAILED. Expected 3 violations, got synced={synced}, violations={violations}")
 
 def compare_waterfilling_performance():
-    print("\n=== Comparing Waterfilling Performance (Capacity vs Power) ===")
-    opera_noise = [5, 10, 5, 20, 100, 5, 10, 5]
-    shale_noise = [4, 1, 9, 8]
-    sirius_noise = [5, 15, 15, 6, 13, 12]
-    generic_noise = [5, 5, 5, 5]
+    print("\n=== Comparing Waterfilling Performance: GA vs Architectures ===")
+    num_nodes = 10
+    target_degree = 4
+    total_power = 50
     
-    power_levels = np.linspace(10, 100, 10)
+    # 1. Opera Setup (Regular Latin Square)
+    opera_adj = generate_random_latin_square(num_nodes)
+    # Convert to adj list (degree 4 subset) and ensure 0-indexed
+    opera_links = [[(v - 1) % num_nodes for v in row[:target_degree]] for row in opera_adj]
     
-    results = {
-        "Opera": [],
-        "Shale": [],
-        "Sirius": [],
-        "Generic": []
+    # 2. Shale Setup (RR2)
+    # For fair N=10 comparison, use a random regular topology as 'Shale-like'
+    shale_links = generate_random_topology(num_nodes, target_degree)
+
+    # 3. Sirius Setup
+    # wavelengths=2, ports=2, nodes=10
+    As, Ws, P = generate_full_system(2, 2, num_nodes)
+    # Ensure neighbor IDs are 0-indexed and within bounds
+    sirius_links = [[(v - 1) % num_nodes for v in row] for row in As[0]]
+
+    # 4. Evolution - Hybrid GA
+    # Use a simple Ring as frozen backbone (Degree 2)
+    ring_backbone = [[] for _ in range(num_nodes)]
+    for i in range(num_nodes):
+        ring_backbone[i].append((i + 1) % num_nodes)
+        ring_backbone[i].append((i - 1) % num_nodes)
+    
+    print("Running Hybrid GA Evolution (Capacity-Aware)...")
+    hybrid_ga_adj = evolve_topology(num_nodes, target_degree, generations=30, 
+                                   traffic_type="skewed", frozen_backbone=ring_backbone)
+
+    # 5. Evaluate all on Skewed Traffic
+    from Traffic_Benchmarks import generate_skewed_traffic
+    traffic = generate_skewed_traffic(num_nodes)
+    
+    architectures = {
+        "Opera (Static)": opera_links,
+        "Shale (Regular)": shale_links,
+        "Sirius (Slotted)": sirius_links,
+        "Hybrid GA (Evolved)": hybrid_ga_adj
     }
     
-    scenarios = [
-        ("Opera", opera_noise),
-        ("Shale", shale_noise),
-        ("Sirius", sirius_noise),
-        ("Generic", generic_noise)
-    ]
+    power_levels = np.linspace(10, 100, 10)
+    results = {name: [] for name in architectures}
     
-    for label, noises in scenarios:
+    for name, adj in architectures.items():
         for P in power_levels:
-            alloc = waterfilling(noises, P)
-            
-            # Calculate Capacity: sum(log2(1 + Pi/Ni))
-            alloc_arr = np.array(alloc)
-            noise_arr = np.array(noises)
-            
-            # Handle potential zeros in noise if any (though ours are >0)
-            with np.errstate(divide='ignore'):
-                snr = alloc_arr / noise_arr
-                
-            capacity = np.sum(np.log2(1 + snr))
-            results[label].append(capacity)
+            cap = calculate_topology_capacity(adj, traffic, total_power=P)
+            results[name].append(cap)
             
     # Visualize
     try:
         import matplotlib.pyplot as plt
-        
-        plt.figure(figsize=(10, 6))
-        for label, capacities in results.items():
-            plt.plot(power_levels, capacities, marker='o', label=label)
+        plt.figure(figsize=(12, 7))
+        for name, capacities in results.items():
+            linewidth = 3 if "GA" in name else 1.5
+            plt.plot(power_levels, capacities, marker='o', label=name, linewidth=linewidth)
             
         plt.xlabel("Total Power Budget (P)")
-        plt.ylabel("Capacity (Shannon Sum Rate)")
-        plt.title("Waterfilling Performance Comparison: All 4 Contexts")
+        plt.ylabel("Shannon Capacity (Weighted Sum Rate)")
+        plt.title(f"Performance Comparison on Skewed Traffic (N={num_nodes}, D={target_degree})")
         plt.legend()
         plt.grid(True, linestyle='--', alpha=0.7)
-        print("Displaying comparison plot...")
+        
+        plt.savefig("plots/final_comparison.png")
+        print("Final comparison plot saved to plots/final_comparison.png")
         plt.show()
         
-    except ImportError:
-        print("Comparison visualization skipped (matplotlib not found).")
+    except Exception as e:
+        print(f"Visualization failed: {e}")
 
 if __name__ == "__main__":
-    # Existing Tests
-    test_opera_waterfilling()
-    test_shale_waterfilling()
-    test_waterfilling_timeslots()
-    test_sirius_waterfilling()
-    
-    # New Scenario Tests
-    test_diurnal_waterfilling()
-    test_latency_scenarios()
-    test_genetic_algorithm_waterfilling()
-    
-    # Topology/Path Tests
-    test_rr2_path()
-    test_spray_short()
-    test_guard_band()
-    test_ai_topology()
+    # Standardize results directory
+    if not os.path.exists('plots'):
+        os.makedirs('plots')
+
+    # Run the big comparison
     compare_waterfilling_performance()
 
