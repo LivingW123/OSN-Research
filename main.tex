@@ -4,15 +4,12 @@
 \usepackage{amsmath}
 \usepackage{amssymb}
 
-\title{Connectivity Matrices}
+\title{Optical Circuit Switched Networks: Connectivity Matrices and Genetic Algorithms}
 \author{Oneal Wang}
 \date{October 2025}
 
 \begin{document}
     \maketitle
-
-    \section{Introduction}
-
     \section{Shale}
     $V$ is represented as a matrix of the sending node as rows and receiving node
     as columns
@@ -190,6 +187,17 @@
                 \mathscr{M}_{b \times 27}= DW = S, i \in \{1, ... ,n-1\}\\
             \]
     \end{enumerate}
+
+    \subsection{Numerical Results}
+    Shale's Round-Robin structure provides a predictable and stable performance across different traffic patterns. Using the waterfilling algorithm, we observe that Shale effectively utilizes available pathways, though it may not reach the peak efficiency of more dynamic architectures under extreme skew.
+
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=0.7\textwidth]{plots/shale_rigorous.png}
+        \caption{Shale Rigorous Waterfilling Performance}
+        \label{fig:shale_rigorous}
+    \end{figure}
+
     \section{Opera}
     $V$ is represented as a matrix of the racks with the sending node as rows and
     receiving node as columns
@@ -266,6 +274,27 @@
                 _{A_{i,k},i}) = 0
             \]
     \end{enumerate}
+    \subsection{Numerical Results}
+    Our analysis of the Opera architecture using the waterfilling algorithm confirms its efficiency in low-latency environments. However, the performance degrades as the number of hops increases, highlighting a significant multi-hop routing penalty.
+
+    \begin{figure}[h]
+        \centering
+        \begin{minipage}{0.45\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/opera_rigorous.png}
+            \caption{Opera Rigorous Waterfilling}
+            \label{fig:opera_rigorous}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.45\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/opera_low_latency.png}
+            \caption{Opera Low Latency Performance}
+            \label{fig:opera_low_lat}
+        \end{minipage}
+    \end{figure}
+
+    As seen in Fig 3, Opera achieves near-peak capacity at low latencies, but the introduction of additional hops (Fig 2) introduces bottlenecks that the waterfilling algorithm must navigate, leading to a more distributed power allocation.
 
     \section{Sirius}
     $\lambda_{1}, ..., \lambda_{i},...\lambda_{j}$ = wavelength, corresponding timeslot
@@ -342,4 +371,67 @@ Parent Function: \\
             4 & 10 \\
         \end{bmatrix}
     \]
+
+    \subsection{Numerical Results}
+    Sirius leverages wavelength-division multiplexing across time slots. Our simulation shows dynamic power allocation across these slots allows for high throughput, though scheduling complexity increases with the number of wavelengths. The waterfilling algorithm effectively balances the power across available links and wavelengths to maximize total Shannon capacity.
+
+    \begin{figure}[h]
+        \centering
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/sirius_wf_ts0.png}
+            \caption{Sirius Waterfilling (TS 0)}
+            \label{fig:sirius_wf_0}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/sirius_wf_ts1.png}
+            \caption{Sirius Waterfilling (TS 1)}
+            \label{fig:sirius_wf_1}
+        \end{minipage}
+    \end{figure}
+
+    Figures \ref{fig:sirius_wf_0} and \ref{fig:sirius_wf_1} illustrate the dynamic nature of power allocation in Sirius. Depending on the timeslot and the specific AWGR configuration, the capacity bottlenecks shift, requiring the waterfilling algorithm to adapt the power levels to maintain optical efficiency.
+
+    \section{Genetic Algorithm}
+    To go beyond fixed architectures, we developed a hybrid Genetic Algorithm (GA). The goal is to evolve a topology $W$ that maximizes fitness:
+    \[
+        Fitness = \alpha \cdot Capacity(W, T) + \beta \cdot \frac{1}{ASPL(W)} - \gamma \cdot Penalty(Degree)
+    \]
+    where $T$ is the traffic demand (e.g., skewed or hotspot traffic). We often initialize the population with a "Frozen Ring Backbone" to ensure basic connectivity (cycle graph) and let the GA evolve long-range shortcuts.
+
+    \subsection{Numerical Results}
+    The GA-evolved topologies were tested against stochastic waterfilling to ensure robustness. The results show that the GA successfully identifies long-range shortcuts that minimize the average shortest path length (ASPL) while maximizing Shannon capacity for the target traffic.
+
+    \begin{figure}[h]
+        \centering
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/genetic_node_0_rigorous.png}
+            \caption{GA Rigorous WF (Node 0)}
+            \label{fig:ga_wf_0}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/genetic_low_latency.png}
+            \caption{GA Low Latency}
+            \label{fig:ga_low_lat}
+        \end{minipage}
+    \end{figure}
+
+    As shown in Figure \ref{fig:ga_low_lat}, the GA architecture maintains high performance even under latency constraints, as it prioritizes direct links for high-traffic pairs evolved during the optimization phase.
+
+    \section{Performance Comparison}
+    We benchmarked all architectures—Opera, Shale, Sirius, and the Genetic Algorithm—under a skewed traffic pattern. The results, summarized in Figure \ref{fig:final_comp}, demonstrate the clear advantage of topology evolution. While static architectures like Opera and Shale perform well under uniform assumptions, they struggle with highly non-uniform demands where specific node pairs dominate the traffic.
+
+    The Genetic Algorithm, by evolving its connectivity specifically for the skewed traffic matrix, effectively "pre-allocates" capacity where it is most needed, resulting in significantly higher total Shannon capacity for the same aggregate power budget.
+
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=0.8\textwidth]{plots/final_comparison.png}
+        \caption{Architecture Comparison under Skewed Traffic using Shannon Capacity}
+        \label{fig:final_comp}
+    \end{figure}
 \end{document}
