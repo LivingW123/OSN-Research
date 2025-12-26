@@ -78,7 +78,7 @@ def test_shale_waterfilling():
     
     random.seed(42)
     link_noise = [random.randint(1, 20) for _ in range(num_links)]
-    total_power = 30
+    total_power = 50
     
     print(f"Simulated Link Noise Levels: {link_noise}")
     print(f"Total Power Budget: {total_power}")
@@ -110,7 +110,7 @@ def test_waterfilling_timeslots():
         [5, 20, 5, 20]
     ]
     
-    total_power = 20 # Power per timeslot
+    total_power = 50 # Power per timeslot
     
     print(f"Channels (3 Timeslots x 4 Channels):\n{np.array(channels)}")
     print(f"Total Power per Timeslot: {total_power}")
@@ -167,7 +167,7 @@ def test_sirius_waterfilling():
         print(f"Timeslot {t} Active Links (Src->Dst): {list(zip(rows, cols))}")
         print(f"  Noise Levels: {timeslot_noise}")
         
-    total_power = 30
+    total_power = 50
     print(f"Total Power per Timeslot: {total_power}")
     
     allocations = waterfilling(channels, total_power)
@@ -345,21 +345,21 @@ def test_latency_scenarios():
     shale_noise = [5, 2, 8, 4]
     
     print("Shale Low Latency: Shortest Path Links.")
-    visualize_waterfilling(shale_noise, 40, title="Shale - Low Latency", filename="shale_low_latency")
+    visualize_waterfilling(shale_noise, 50, title="Shale - Low Latency", filename="shale_low_latency")
     
     print("Shale High Latency: Sprayed Paths (Often longer, higher cost).")
     spray_noise = [n * 1.5 for n in shale_noise]
-    visualize_waterfilling(spray_noise, 40, title="Shale - High Latency", filename="shale_high_latency")
+    visualize_waterfilling(spray_noise, 50, title="Shale - High Latency", filename="shale_high_latency")
 
     # 3. Genetic Scenarios
     print("\n[Genetic Algorithm]")
     print("Genetic Low Latency: Evolved Topology (ASPL ~ 1.5).")
     # Low ASPL means short paths -> less noise accumulation
-    visualize_waterfilling([5] * 6, 30, title="Genetic - Low Latency", filename="genetic_low_latency")
+    visualize_waterfilling([5] * 6, 50, title="Genetic - Low Latency", filename="genetic_low_latency")
     
     print("Genetic High Latency: Random Topology (ASPL ~ 2.5).")
     # High ASPL means longer paths -> more noise accumulation
-    visualize_waterfilling([15] * 6, 30, title="Genetic - High Latency", filename="genetic_high_latency")
+    visualize_waterfilling([15] * 6, 50, title="Genetic - High Latency", filename="genetic_high_latency")
 
 def test_genetic_algorithm_waterfilling():
     print("\n=== Genetic Algorithm Waterfilling (Timeslots based on Nodes) ===")
@@ -389,7 +389,7 @@ def test_genetic_algorithm_waterfilling():
         print(f"Node {i} (Timeslot {i}) has {num_links} links: {neighbors}. Noise: {node_noise}")
 
     # Since node degrees might vary, we call waterfilling individually per node
-    total_power = 40
+    total_power = 50
     print(f"\nPerforming Waterfilling for each Node (Total Power: {total_power})")
     
     for i, node_noise in enumerate(all_timeslots_noise):
