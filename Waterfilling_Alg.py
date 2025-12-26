@@ -37,32 +37,6 @@ def waterfilling(channels, total_power):
     else:
         raise ValueError("Channels must be 1D or 2D array.")
 
-def _waterfilling_1d(channels, total_power):
-    """
-    Helper function for single timeslot waterfilling.
-    """
-    n = len(channels)
-    noise = np.array(channels)
-    
-    # Sort noise levels to easily find the water level
-    sorted_indices = np.argsort(noise)
-    sorted_noise = noise[sorted_indices]
-    
-    water_level = 0
-    
-    for i in range(n):
-        current_noise_sum = np.sum(sorted_noise[:n-i])
-        potential_water_level = (total_power + current_noise_sum) / (n - i)
-        
-        if potential_water_level > sorted_noise[n-i-1]:
-            water_level = potential_water_level
-            break
-            
-    # Calculate power allocation: P_i = (Water Level - Noise_i)+
-    power_allocation = np.maximum(water_level - noise, 0)
-    
-    return power_allocation
-
 if __name__ == "__main__":
     # Example Usage
     
