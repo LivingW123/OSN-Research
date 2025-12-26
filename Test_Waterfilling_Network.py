@@ -13,6 +13,23 @@ from Opera_Alg import find_optimal_path_broken_racks, find_path_2d
 if not os.path.exists('plots'):
     os.makedirs('plots')
 
+def run_rigorous_waterfilling(base_noise, total_power, iterations=500, noise_std=1.0):
+    """
+    Runs the waterfilling algorithm multiple times with added Gaussian noise 
+    and returns the average and standard deviation of allocations.
+    """
+    base_noise = np.array(base_noise)
+    all_allocations = []
+    
+    for _ in range(iterations):
+        # Add random Gaussian noise to the base noise levels
+        # Ensuring noise is at least a small positive value
+        stochastic_noise = np.maximum(base_noise + np.random.normal(0, noise_std, base_noise.shape), 0.1)
+        alloc = waterfilling(stochastic_noise, total_power)
+        all_allocations.append(alloc)
+        
+    return np.mean(all_allocations, axis=0), np.std(all_allocations, axis=0)
+
 
 def test_opera_waterfilling():
     print("\n=== Testing Waterfilling with Opera Context ===")
@@ -39,6 +56,13 @@ def test_opera_waterfilling():
 
     # Visualize
     visualize_waterfilling(rack_weights, total_power, title="Opera Waterfilling Bottlenecks")
+
+    print("\n--- Rigorous Test (Averaged over 500 iterations with noise) ---")
+    avg_p, std_p = run_rigorous_waterfilling(rack_weights, total_power)
+    for i, (m, s) in enumerate(zip(avg_p, std_p)):
+        print(f"  Rack {i}: {m:.2f} (±{s:.2f})")
+    
+    visualize_waterfilling(rack_weights, total_power, title="Opera Average Allocation (Rigorous)", filename="opera_rigorous", yerr=std_p)
 
 def test_shale_waterfilling():
     print("\n=== Testing Waterfilling with Shale Context ===")
@@ -71,6 +95,13 @@ def test_shale_waterfilling():
 
     # Visualize
     visualize_waterfilling(link_noise, total_power, title="Shale Waterfilling Bottlenecks")
+
+    print("\n--- Rigorous Test (Averaged over 500 iterations with noise) ---")
+    avg_p, std_p = run_rigorous_waterfilling(link_noise, total_power)
+    for i, neighbor in enumerate(active_links):
+        print(f"  Link to Node {neighbor}: {avg_p[i]:.2f} (±{std_p[i]:.2f})")
+    
+    visualize_waterfilling(link_noise, total_power, title="Shale Average Allocation (Rigorous)", filename="shale_rigorous", yerr=std_p)
 def test_waterfilling_timeslots():
     print("\n=== Testing Waterfilling with Multiple Timeslots ===")
     channels = [
@@ -155,10 +186,22 @@ def test_sirius_waterfilling():
 
     visualize_waterfilling(channels, total_power, title="Sirius Waterfilling Bottlenecks")
 
-def visualize_waterfilling(channels, total_power, title="Waterfilling Results", filename=None):
+    print("\n--- Rigorous Test (Averaged per Timeslot) ---")
+    sirius_avg_all = []
+    sirius_std_all = []
+    for t in range(num_timeslots):
+        avg_p, std_p = run_rigorous_waterfilling(channels[t], total_power)
+        print(f"  Timeslot {t} Avg Allocation: {np.mean(avg_p):.2f}")
+        sirius_avg_all.append(avg_p)
+        sirius_std_all.append(std_p)
+    
+    visualize_waterfilling(channels, total_power, title="Sirius Averaged (Rigorous)", filename="sirius_rigorous", yerr=np.array(sirius_std_all))
+
+def visualize_waterfilling(channels, total_power, title="Waterfilling Results", filename=None, yerr=None):
     """
     Visualizes the waterfilling power allocation using a stacked bar chart.
     Highlights bottlenecks (channels with 0 allocated power due to high noise).
+    Supports error bars (yerr) for rigorous testing (averages).
     Saves the image if filename is provided.
     """
     channels = np.array(channels)
@@ -176,7 +219,8 @@ def visualize_waterfilling(channels, total_power, title="Waterfilling Results", 
             # Recursively call for each timeslot
             ts_suffix = f"_ts{t}"
             ts_filename = f"plots/{filename}{ts_suffix}.png" if filename else None
-            visualize_waterfilling(channels[t], powers[t], title=f"{title} - Timeslot {t}", filename=ts_filename)
+            ts_yerr = yerr[t] if yerr is not None else None
+            visualize_waterfilling(channels[t], powers[t], title=f"{title} - Timeslot {t}", filename=ts_filename, yerr=ts_yerr)
         return
 
     # --- 1D Logic ---
@@ -210,7 +254,7 @@ def visualize_waterfilling(channels, total_power, title="Waterfilling Results", 
     # 3. Plot Allocated Power (Blue)
     if np.any(active_mask):
         plt.bar(indices[active_mask], allocation[active_mask], bottom=channels[active_mask], 
-                label='Allocated Power', color='skyblue', edgecolor='black')
+                label='Allocated Power', color='skyblue', edgecolor='black', yerr=yerr[active_mask] if yerr is not None else None, capsize=5)
     
     # 4. Water Level Line
     plt.axhline(y=water_level, color='blue', linestyle='--', linewidth=2, label=f'Water Level ({water_level:.2f})')
@@ -229,7 +273,7 @@ def visualize_waterfilling(channels, total_power, title="Waterfilling Results", 
             save_path += '.png'
         plt.savefig(save_path)
         print(f"Saved plot to {save_path}")
-    plt.show()
+    plt.close() # Close to avoid memory issues and blocking show()
 
 def generate_diurnal_power(num_timeslots, baseline=30, amplitude=20):
     """Generates a sinusoidal power budget matching a day/night cycle."""
@@ -350,6 +394,11 @@ def test_genetic_algorithm_waterfilling():
     
     for i, node_noise in enumerate(all_timeslots_noise):
         visualize_waterfilling(node_noise, total_power, title=f"Genetic Algo - Node {i} Neighborhood", filename=f"genetic_node_{i}")
+        
+        # Rigorous check for each node
+        avg_p, std_p = run_rigorous_waterfilling(node_noise, total_power)
+        print(f"Node {i} Avg Power per Link: {np.mean(avg_p):.2f} (±{np.mean(std_p):.2f})")
+        visualize_waterfilling(node_noise, total_power, title=f"Genetic Algo - Node {i} Rigorous", filename=f"genetic_node_{i}_rigorous", yerr=std_p)
 
 
 def test_rr2_path():
