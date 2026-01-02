@@ -191,11 +191,27 @@
     \subsection{Numerical Results}
     Shale's Round-Robin structure provides a predictable and stable performance across different traffic patterns. Using the waterfilling algorithm, we observe that Shale effectively utilizes available pathways, though it may not reach the peak efficiency of more dynamic architectures under extreme skew.
 
+    \subsubsection{Advanced Congestion Control and VLB Routing}
+    To handle real-world traffic demands, our implementation of Shale incorporates:
+    \begin{itemize}
+        \item \textbf{Interleaved Schedules}: Simulation of parallel matching schedules to support both low-latency ($h=1$) and high-throughput ($h=4$) traffic streams.
+        \item \textbf{Valiant Load Balancing (VLB)}: A two-phase routing scheme where cells are first sprayed to intermediate nodes (Spraying Phase) before being routed directly to the destination (Direct Phase). This spreads the load and reduces hotspots.
+        \item \textbf{PIEO Queues}: Push-In Extract-Out queues allow switches to extract the highest-priority eligible cell, overcoming Head-Of-Line (HOL) blocking when the physical link for the top cell is not currently connected in the timeslot.
+        \item \textbf{Credit-Based Flow Control}: Tokens are exchanged between switches to manage buffer space (credits), preventing bufferbloat and ensuring hop-by-hop reliability.
+    \end{itemize}
+
     \begin{figure}[h]
         \centering
         \includegraphics[width=0.7\textwidth]{plots/shale_rigorous.png}
         \caption{Shale Rigorous Waterfilling Performance}
         \label{fig:shale_rigorous}
+    \end{figure}
+
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=0.7\textwidth]{plots/shale_congestion_report.png}
+        \caption{Shale VLB Simulation: Latency vs. Throughput under Interleaved Schedules}
+        \label{fig:shale_vlb}
     \end{figure}
 
     \section{Opera}

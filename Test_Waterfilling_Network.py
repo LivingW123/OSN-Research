@@ -66,43 +66,30 @@ def test_opera_waterfilling():
     visualize_waterfilling(rack_weights, total_power, title="Opera Average Allocation (Rigorous)", filename="opera_rigorous", yerr=std_p)
 
 def test_shale_waterfilling():
-    print("\n=== Testing Waterfilling with Shale Context ===")
+    print("\n=== Testing Waterfilling with Shale VLB Context ===")
     print("Generating Shale Topology (RR2, Base 3, Dim 2)...")
     adj_matrix = RR2(3, 2)
     
     node_index = 0
-    node_0_links = adj_matrix[node_index]
-    active_links = [x for x in node_0_links if x is not None]
+    active_links = [x for x in adj_matrix[node_index] if x is not None]
     
-    num_links = len(active_links)
-    print(f"Node {node_index} has {num_links} active links: {active_links}")
-    
-    random.seed(42)
-    link_noise = [random.randint(1, 20) for _ in range(num_links)]
+    # 1. Low Latency (h=1) Waterfilling
+    print("\nScenario: Low Latency Traffic (h=1)")
+    h1_noise = [random.randint(1, 10) for _ in active_links]
     total_power = 50
-    
-    print(f"Simulated Link Noise Levels: {link_noise}")
-    print(f"Total Power Budget: {total_power}")
-    
-    allocation = waterfilling(link_noise, total_power)
-    
-    print("\nPower Allocation per Link:")
-    for i, neighbor in enumerate(active_links):
-        p = allocation[i]
-        n = link_noise[i]
-        print(f"  Link to Node {neighbor} (Noise {n}): {p:.2f}")
-        
-    print(f"\nTotal Allocated Power: {np.sum(allocation):.2f}")
+    h1_alloc = waterfilling(h1_noise, total_power)
+    visualize_waterfilling(h1_noise, total_power, title="Shale VLB - Low Latency (h=1)", filename="shale_h1_wf")
 
-    # Visualize
-    visualize_waterfilling(link_noise, total_power, title="Shale Waterfilling Bottlenecks")
-
-    print("\n--- Rigorous Test (Averaged over 500 iterations with noise) ---")
-    avg_p, std_p = run_rigorous_waterfilling(link_noise, total_power)
-    for i, neighbor in enumerate(active_links):
-        print(f"  Link to Node {neighbor}: {avg_p[i]:.2f} (±{std_p[i]:.2f})")
+    # 2. High Throughput / Spread (h=4) Waterfilling
+    # Sprayed paths accumulate noise across hops (simulated here as 2.5x base noise)
+    print("Scenario: High Throughput Sprayed Traffic (h=4)")
+    h4_noise = [n * 2.5 for n in h1_noise]
+    h4_alloc = waterfilling(h4_noise, total_power)
+    visualize_waterfilling(h4_noise, total_power, title="Shale VLB - Sprayed (h=4)", filename="shale_h4_wf")
     
-    visualize_waterfilling(link_noise, total_power, title="Shale Average Allocation (Rigorous)", filename="shale_rigorous", yerr=std_p)
+    print("\n--- Rigorous Test (Averaged Over VLB Modes) ---")
+    avg_p, std_p = run_rigorous_waterfilling(h1_noise, total_power)
+    visualize_waterfilling(h1_noise, total_power, title="Shale Average Allocation (Rigorous)", filename="shale_rigorous", yerr=std_p)
 def test_waterfilling_timeslots():
     print("\n=== Testing Waterfilling with Multiple Timeslots ===")
     channels = [
