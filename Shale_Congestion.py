@@ -310,38 +310,26 @@ def generate_rr_schedule(n):
     return schedules
 
 if __name__ == "__main__":
-    # Simulate interleaving h=1 and h=4 schedules
-    # Here "schedule" refers to the RR configuration sequence.
-    # In logic, h is a property of the traffic.
-    
-    N = 8
+    import numpy as np
+    from scipy import stats
+
+    N = 20
     rr_sched = generate_rr_schedule(N)
+    sim = ShaleSimulation(N, rr_sched, bucket_capacity=20) # Increased capacity further for larger N
     
-    # Create "interleaved schedules" by just having two identical RR sequences 
-    # but we could vary them if we wanted.
-    # The requirement says "simulate multiple schedules running in parallel".
-    # We'll just use the standard RR schedule and show both h=1 and h=4 traffic.
+    h_range = list(range(1, 13)) # h = 1 to 12
+    print(f"Injecting traffic for h values: {h_range}")
     
-    sim = ShaleSimulation(N, rr_sched, bucket_capacity=5)
-    
-    print("Injecting mixed h=1 and h=4 traffic...")
-    # h=1 traffic (Low Latency)
-    for _ in range(10):
-        src, dst = random.sample(range(N), 2)
-        sim.inject_traffic(src, dst, h=1, count=1)
-        
-    # h=4 traffic (High Throughput)
-    for _ in range(10):
-        src, dst = random.sample(range(N), 2)
-        sim.inject_traffic(src, dst, h=4, count=1)
-        
+    # Inject traffic for each h
+    for h_val in h_range:
+        for _ in range(30): # 30 packets per h
+            src, dst = random.sample(range(N), 2)
+            sim.inject_traffic(src, dst, h=h_val, count=1)
+            
     # Run simulation
-    for s in range(50):
+    # Run enough steps to clear most traffic
+    for s in range(200): # Increased steps for longer paths
         sim.run_step()
-        if s == 10:
-            # Simulate a link failure midway
-            print("\n!!! Simulating link failure (0, 1) at T=10 !!!")
-            sim.add_failure(0, 1)
             
     sim.report()
     
@@ -352,41 +340,91 @@ if __name__ == "__main__":
     if not os.path.exists('plots'):
         os.makedirs('plots')
 
-    # 1. Latency vs Delivery Time
     if sim.delivered_cells:
         delivery_times = [t for t, c in sim.delivered_cells]
         latencies = [t - c.creation_time for t, c in sim.delivered_cells]
         h_values = [c.h for t, c in sim.delivered_cells]
+        hops = [c.hops_taken for t, c in sim.delivered_cells]
 
+        # 1. Latency Analysis (Avg Latency vs h)
         plt.figure(figsize=(10, 6))
-        for h_type in sorted(set(h_values)):
-            pts = [(dt, lat) for dt, lat, hv in zip(delivery_times, latencies, h_values) if hv == h_type]
-            if pts:
-                dts, lats = zip(*pts)
-                plt.scatter(dts, lats, label=f'h={h_type} traffic', alpha=0.7)
-
-        plt.xlabel('Simulation Time (cycles)')
+        
+        avg_lats = []
+        std_lats = []
+        unique_h = sorted(set(h_values))
+        
+        for h in unique_h:
+            lats = [t - c.creation_time for t, c in sim.delivered_cells if c.h == h]
+            avg_lats.append(np.mean(lats))
+            std_lats.append(np.std(lats))
+            
+        plt.errorbar(unique_h, avg_lats, yerr=std_lats, fmt='-o', capsize=5, ecolor='red', label='Mean Latency')
+        
+        plt.xlabel('VLB Parameter (h)')
         plt.ylabel('Latency (cycles)')
-        plt.title('Shale Simulation: Cell Latency over Time')
+        plt.title('Shale Simulation: Latency Scaling with h')
         plt.legend()
         plt.grid(True, linestyle='--', alpha=0.6)
+        plt.xticks(unique_h)
         plt.savefig('plots/shale_congestion_report.png')
         print("Saved plots/shale_congestion_report.png")
 
-        # 2. Hop Count Distribution
-        plt.figure(figsize=(8, 5))
-        for h_type in sorted(set(h_values)):
-            hops = [c.hops_taken for t, c in sim.delivered_cells if c.h == h_type]
-            plt.hist(hops, bins=range(min(hops), max(hops) + 2), alpha=0.5, label=f'h={h_type}', align='left', rwidth=0.8)
+        # 2. Hop Count Analysis (Avg Hops vs h)
+        plt.figure(figsize=(10, 6))
         
-        plt.xlabel('Hops Taken')
-        plt.ylabel('Cell Count')
-        plt.title('Shale Simulation: Hop Distribution')
+        avg_hops = []
+        std_hops = []
+        
+        for h in unique_h:
+            hp = [c.hops_taken for t, c in sim.delivered_cells if c.h == h]
+            avg_hops.append(np.mean(hp))
+            std_hops.append(np.std(hp))
+            
+        plt.errorbar(unique_h, avg_hops, yerr=std_hops, fmt='-s', color='green', capsize=5, label='Mean Hops')
+        
+        plt.xlabel('VLB Parameter (h)')
+        plt.ylabel('Hops Taken')
+        plt.title('Shale Simulation: Hop Scaling with h')
         plt.legend()
-        plt.savefig('plots/shale_latency_dist.png') # Reusing name for tex
+        plt.grid(True, linestyle='--', alpha=0.6)
+        plt.xticks(unique_h)
+        plt.savefig('plots/shale_latency_dist.png')
         print("Saved plots/shale_latency_dist.png")
 
-    # Show some paths
-    print("\nSample paths:")
-    for _, c in sim.delivered_cells[:5]:
-        print(f"{c.src} -> {c.dst} (h={c.h}): {c.path} latency={_ - c.creation_time}")
+        # 3. Best Fit Analysis
+        # Equation 1: Avg Latency vs h
+        avg_latencies = []
+        avg_hops_list = []
+        valid_h = []
+        
+        print("\n--- Statistical Analysis ---")
+        for h in h_range:
+            lats = [t - c.creation_time for t, c in sim.delivered_cells if c.h == h]
+            hp = [c.hops_taken for t, c in sim.delivered_cells if c.h == h]
+            if lats:
+                avg_l = np.mean(lats)
+                avg_h = np.mean(hp)
+                avg_latencies.append(avg_l)
+                avg_hops_list.append(avg_h)
+                valid_h.append(h)
+                print(f"h={h}: Avg Latency={avg_l:.2f}, Avg Hops={avg_h:.2f}")
+
+        # Linear Regression for Latency
+        slope_l, intercept_l, r_value_l, p_value_l, std_err_l = stats.linregress(valid_h, avg_latencies)
+        print(f"\nLatency vs h Best Fit: Latency = {slope_l:.2f} * h + {intercept_l:.2f}")
+        print(f"R-squared: {r_value_l**2:.4f}")
+
+        # Linear Regression for Hops
+        slope_h, intercept_h, r_value_h, p_value_h, std_err_h = stats.linregress(valid_h, avg_hops_list)
+        print(f"Hops vs h Best Fit: Hops = {slope_h:.2f} * h + {intercept_h:.2f}")
+        print(f"R-squared: {r_value_h**2:.4f}")
+        
+        # Save fit plot for reference (optional, not requested to put in tex but good for user)
+        plt.figure(figsize=(8,5))
+        plt.plot(valid_h, avg_latencies, 'o', label='Simulated Data')
+        plt.plot(valid_h, [slope_l*x + intercept_l for x in valid_h], 'r--', label=f'Fit: {slope_l:.2f}h + {intercept_l:.2f}')
+        plt.xlabel('h parameter')
+        plt.ylabel('Average Latency')
+        plt.title('Avg Latency vs h parameter')
+        plt.legend()
+        plt.savefig('plots/shale_h_fit.png')

@@ -3,6 +3,7 @@
 \usepackage{mathrsfs}
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{float}
 
 \title{Optical Circuit Switched Networks: Connectivity Matrices and Genetic Algorithms}
 \author{Oneal Wang}
@@ -42,18 +43,17 @@
         S = \mathscr{M}_{b \times n}
     \]
     \begin{enumerate}
-        \item Round-Robin 1 Letter 1 Node\\
-            minimum time coefficient: n\\
-            maximum time coefficient: n(n-1)\\
-            number of pathways: n(n-1)/2\\
-            for an arbitrary i broken nodes, remove $(2ni-i+1)/2$ pathways\\
+        \item Round-Robin 1 Letter 1 Node
+            minimum time coefficient: n
+            maximum time coefficient: n(n-1)
+            number of pathways: n(n-1)/2
+            for an arbitrary i broken nodes, remove $(2ni-i+1)/2$ pathways
             for an arbitrary k broken pathways, maximum increase to n-1 timeslots,
             centered around +1 timeslot
             \[
                 \mathscr{M}_{b \times n}=DT^{i}(V) = DW = S, i \in \{1, ... ,n-1\}
-                \\
             \]
-            Example 2.1 (6 nodes, 5 timeslots, h=1): \\
+            Example 2.1 (6 nodes, 5 timeslots, h=1):
             W = Adjacency Matrix of a Directed Graph, where each timeslot is the
             row and each column is the node
             \[
@@ -104,11 +104,11 @@
                 \end{bmatrix}
                 = S , i \in \{1, ... ,5\}
             \]
-            minimum time coefficient: 6\\
-            maximum time coefficient: 30\\
-            number of pathways: 15\\
+            minimum time coefficient: 6
+            maximum time coefficient: 30
+            number of pathways: 15
 
-        \item Round-Robin 1 Letter repeat for every X Letters of 1 Node\\
+        \item Round-Robin 1 Letter repeat for every X Letters of 1 Node
             number of nodes: $L^{x}$ = n \\
             timeslot number: $(L-1)^{x}$ \\
             number of pathways: $L^{x} \times (L-1)^{X}/2$\\
@@ -118,16 +118,15 @@
             for an arbitrary i broken nodes, remove $i(L-1)^{x}$ pathways
             \[
                 \mathscr{M}_{b \times n}= DW_{i}= S, i \in \{0, ... ,(L-1)^{x}\},
-                j \in \mathbb{Z}, 0\leq j \leq L^{x}-1\
-
+                j \in \mathbb{Z}, 0\leq j \leq L^{x}-1
             \]
             always multiple recievers for each timeslot so order within each
             column does not matter
 
-            Example 2.2 (3 letters, x = 2): \\
-            number of nodes: $3^{2}$ = 9 \\
-            timeslot number: $2^{2} = 4$ \\
-            number of pathways: $3^{2} \times 2^{2}/2 = 18$\\
+            Example 2.2 (3 letters, x = 2):
+            number of nodes: $3^{2}$ = 9
+            timeslot number: $2^{2} = 4$
+            number of pathways: $3^{2} \times 2^{2}/2 = 18$
             W = Adjacency Matrix of a Directed Graph, where each timeslot is the
             row and each column is the node
             \[
@@ -144,7 +143,7 @@
                 ) = 0
             \]
             \[
-                \mathscr{M}_{b \times n}= DW = S, i \in \{1, ... ,n-1\}\\
+                \mathscr{M}_{b \times n}= DW = S, i \in \{1, ... ,n-1\}
             \]
 
         \item Round-Robin t Letter repeat (Hamming-distance) for every X Letters
@@ -157,16 +156,15 @@
             k in base, also the hamming distance L\\
             \[
                 \mathscr{M}_{b \times n}= DW_{i}= S, i \in \{0, ... ,(L-1)^{x+t-1}
-                \}, j \in \mathbb{Z}, 0\leq j \leq (L-1)^{x+t-1}\
-
+                \}, j \in \mathbb{Z}, 0\leq j \leq (L-1)^{x+t-1}
             \]
             always multiple recievers for each timeslot so order within each column
             does not matter
 
-            Example 2.3 (4 letters, x = 3, t=2): \\
-            number of nodes: $4^{2}$ = 16 \\
-            timeslot number: $3^{3} = 27$ \\
-            number of pathways: $4^{2} \times 3^{3}/2 = 216$\\
+            Example 2.3 (4 letters, x = 3, t=2):
+            number of nodes: $4^{2}$ = 16
+            timeslot number: $3^{3} = 27$
+            number of pathways: $4^{2} \times 3^{3}/2 = 216$
             W = Adjacency Matrix of a Directed Graph, where each timeslot is the
             row and each column is the node
             \[
@@ -184,34 +182,98 @@
                 ) = 0
             \]
             \[
-                \mathscr{M}_{b \times 27}= DW = S, i \in \{1, ... ,n-1\}\\
+                \mathscr{M}_{b \times 27}= DW = S, i \in \{1, ... ,n-1\}
             \]
     \end{enumerate}
 
     \subsection{Numerical Results}
     Shale's Round-Robin structure provides a predictable and stable performance across different traffic patterns. Using the waterfilling algorithm, we observe that Shale effectively utilizes available pathways, though it may not reach the peak efficiency of more dynamic architectures under extreme skew.
 
-    \subsubsection{Advanced Congestion Control and VLB Routing}
-    To handle real-world traffic demands, our implementation of Shale incorporates:
-    \begin{itemize}
-        \item \textbf{Interleaved Schedules}: Simulation of parallel matching schedules to support both low-latency ($h=1$) and high-throughput ($h=4$) traffic streams.
-        \item \textbf{Valiant Load Balancing (VLB)}: A two-phase routing scheme where cells are first sprayed to intermediate nodes (Spraying Phase) before being routed directly to the destination (Direct Phase). This spreads the load and reduces hotspots.
-        \item \textbf{PIEO Queues}: Push-In Extract-Out queues allow switches to extract the highest-priority eligible cell, overcoming Head-Of-Line (HOL) blocking when the physical link for the top cell is not currently connected in the timeslot.
-        \item \textbf{Credit-Based Flow Control}: Tokens are exchanged between switches to manage buffer space (credits), preventing bufferbloat and ensuring hop-by-hop reliability.
-    \end{itemize}
-
-    \begin{figure}[h]
+    \begin{figure}[H]
         \centering
         \includegraphics[width=0.7\textwidth]{plots/shale_rigorous.png}
         \caption{Shale Rigorous Waterfilling Performance}
         \label{fig:shale_rigorous}
     \end{figure}
 
-    \begin{figure}[h]
+    \subsubsection{VLB Waterfilling Analysis}
+    \subsubsection{VLB Parameter Sensitivity}
+    We extended the simulation to sweep the VLB spraying parameter $h$ from 1 to 12. The results are summarized in Figure \ref{fig:shale_h_range}.
+
+    \begin{figure}[H]
         \centering
-        \includegraphics[width=0.7\textwidth]{plots/shale_congestion_report.png}
-        \caption{Shale VLB Simulation: Latency vs. Throughput under Interleaved Schedules}
-        \label{fig:shale_vlb}
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/shale_congestion_report.png}
+            \caption{Latency Scaling ($h \in [1,12]$)}
+            \label{fig:shale_latency_time}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/shale_latency_dist.png}
+            \caption{Hop Scaling ($h \in [1,12]$)}
+            \label{fig:shale_hop_dist}
+        \end{minipage}
+        \caption{Shale VLB Performance Scaling}
+        \label{fig:shale_h_range}
+    \end{figure}
+
+    Based on the regression analysis of the extended simulation data ($N=20$), we updated the equations of best fit:
+    \begin{equation}
+        Latency_{avg}(h) \approx 1.34 \cdot h + 74.59
+    \end{equation}
+    \begin{equation}
+        Hops_{avg}(h) = 1.00 \cdot h + 1.00
+    \end{equation}
+
+    \paragraph{Proposed VLB Theorem}
+    \textbf{Theorem (Linear Path Scaling)}: In a deterministic VLB routing scheme, the topological path length $L$ scales strictly linearly with the spray parameter $h$, such that $L(h) = h + 1$, regardless of network size $N$, provided $N > h$.
+
+    \paragraph{VLB Saturation Finding}
+    Our data indicates that in saturation regimes, the effective queuing overhead $\beta$ dominates the per-hop serialization delay $\alpha$. The governance equation for latency overhead becomes:
+    \begin{equation}
+        \tau(h) = \alpha \cdot h + \beta \approx 1.34h + 74.59
+    \end{equation}
+
+    \subsubsection{VLB Waterfilling Analysis}
+    To analyze the impact of VLB routing on capacity, we compare direct low-latency paths ($h=1$) against sprayed high-throughput paths ($h=4$) using the waterfilling algorithm.
+
+    \begin{figure}[H]
+        \centering
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/shale_h1_wf.png}
+            \caption{Shale Waterfilling (h=1)}
+            \label{fig:shale_h1_wf}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/shale_h4_wf.png}
+            \caption{Shale VLB Sprayed (h=4)}
+            \label{fig:shale_h4_wf}
+        \end{minipage}
+    \end{figure}
+
+    \subsubsection{Latency Sensitivity Analysis}
+    Finally, we evaluate Shale under varying latency requirements using waterfilling on latency-constrained subgraphs.
+
+    \begin{figure}[H]
+        \centering
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/shale_low_latency.png}
+            \caption{Shale Low Latency Performance}
+            \label{fig:shale_low_lat_wf}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/shale_high_latency.png}
+            \caption{Shale High Latency Performance}
+            \label{fig:shale_high_lat_wf}
+        \end{minipage}
     \end{figure}
 
     \section{Opera}
@@ -225,10 +287,10 @@
         D = \mathscr{M}_{b \times n}
     \]
     \begin{enumerate}
-        \item Direct Path \\
-            timeslots = maixmum number of hops for an arbitrary node\\
-            for an arbitrary i broken racks, maximum of n-1 hops\\
-            Example 3.1 (8 ToR Switches, 4 Rotor Circuit Switches): \\
+        \item Direct Path
+            timeslots = maixmum number of hops for an arbitrary node
+            for an arbitrary i broken racks, maximum of n-1 hops
+            Example 3.1 (8 ToR Switches, 4 Rotor Circuit Switches):
             A = represents a directed graph where each original row is the node
             and each column is the rack
             \[
@@ -245,19 +307,19 @@
                 \end{bmatrix}
             \]
             W = Adjacency Matrix of a Directed Graph, where each timeslot is the
-            row and each column is the node \\
+            row and each column is the node
             \[
                 W_{i}= \mathscr{M}\mid W_{A_{i,k},i}= 1, \neg(W_{i_{A_{i,k},i}})
                 = 0
             \]
 
-        \item (Uniform) Indirect Path \\
-            This uses BFS to find the optimal path from node a to node b. \\
+        \item (Uniform) Indirect Path
+            This uses BFS to find the optimal path from node a to node b.
             Minimum of 1 hop and maximum of
-            $\left\lceil \frac{n}{2}\right\rceil$ hops\\
-            For an arbitrary i broken racks, at least no hop up to +i hops change\\
-            number of timeslots = maximum number of hops \\
-            Example 3.2: \\
+            $\left\lceil \frac{n}{2}\right\rceil$ hops
+            For an arbitrary i broken racks, at least no hop up to +i hops change
+            number of timeslots = maximum number of hops
+            Example 3.2:
             For the same A as example 3.1, suppose Rack 2 is broken.
             \begin{enumerate}
                 \item The 1-hop path [0, 7] (via rack 2) is now impossible.
@@ -272,19 +334,19 @@
                     6, 7], Rack: [0, 7, 4] (or another valid 2-hop path)
             \end{enumerate}
 
-        \item Weighted Indirect Path \\
+        \item Weighted Indirect Path
             This uses Dijkstra's Algorithm to find the optimal path from node a to
-            node b (not necessarily the shortest). \\
+            node b (not necessarily the shortest).
             Minimum of 1 hop and maximum of
-            $\left\lceil \frac{n}{2}\right\rceil$ hops\\
-            timeslots = number of hops\\
+            $\left\lceil \frac{n}{2}\right\rceil$ hops
+            timeslots = number of hops
             For an arbitrary i broken racks, at least no hop up to +i hops
-            change\\
-            number of timeslots = maximum number of hops \\
+            change
+            number of timeslots = maximum number of hops
             $\theta_{k}$ is the weight of the list where for each element, it is
-            the weight of the corresponding rack (constant if equal weight) \\
-            broken racks can be represented by $\infty$ weight\\
-            Example 3.3: \\
+            the weight of the corresponding rack (constant if equal weight)
+            broken racks can be represented by $\infty$ weight
+            Example 3.3:
             \[
                 W_{8 \times 8}= \mathscr{M}\mid W_{A_{i,k},i}= \theta_{k}, \neg(W
                 _{A_{i,k},i}) = 0
@@ -293,7 +355,7 @@
     \subsection{Numerical Results}
     Our analysis of the Opera architecture using the waterfilling algorithm confirms its efficiency in low-latency environments. However, the performance degrades as the number of hops increases, highlighting a significant multi-hop routing penalty.
 
-    \begin{figure}[h]
+    \begin{figure}[ht]
         \centering
         \begin{minipage}{0.45\textwidth}
             \centering
@@ -314,24 +376,21 @@
 
     \section{Sirius}
     $\lambda_{1}, ..., \lambda_{i},...\lambda_{j}$ = wavelength, corresponding timeslot
-    \\
-    $P_{1}, ..., P_{k},...P_{l}$ = ports \\
-    $G_{1}, ... , G_{p} , ... G_{q}$ = gratings (AWGRs) \\
-    $N_{1}, ... , N_{s} , ... N_{r}$ = nodes \\
-    $r=j \times l$ (derivation is the pathways for an arbitrary node)\\
-    $jq=rl$ (derivation is the total number of pathways)\\
-    Then, it follows that $q = l^{2}$\\
-    \
-Parent Function: \\
+    $P_{1}, ..., P_{k},...P_{l}$ = ports
+    $G_{1}, ... , G_{p} , ... G_{q}$ = gratings (AWGRs)
+    $N_{1}, ... , N_{s} , ... N_{r}$ = nodes
+    $r=j \times l$ (derivation is the pathways for an arbitrary node)
+    $jq=rl$ (derivation is the total number of pathways)
+    Then, it follows that $q = l^{2}$
+    Parent Function:
     \[
-        \mathscr{M}_{b \times n}= DW_{i} = S, i \in \{1, ... ,j\}\
-
+        \mathscr{M}_{b \times n}= DW_{i} = S, i \in \{1, ... ,j\}
     \]
     Source Matrix: $\mathscr{M}_{q \times l}\mid$
     \[
         W_{i} =
     \]
-    Example 4.11 (2 wavelengths, 3 ports, 9 gratings, 6 nodes): \\
+    Example 4.11 (2 wavelengths, 3 ports, 9 gratings, 6 nodes):
     \[
         A^{1} =
         \begin{bmatrix}
@@ -352,11 +411,10 @@ Parent Function: \\
             3 & 9  & 15 \\
         \end{bmatrix}
     \]
-    \[
-        W^{1}_{8 \times 8}= \mathscr{M}\mid W_{A^1_{i,k},i}= 1, \neg(W_{A_{i,k},i}
-        ) = 0, W^{2}_{8 \times 8}= \mathscr{M}\mid W_{A^1_{i,k},i}= 1, \neg(W_{A_{i,k},i}
-        ) = 0
-    \]
+    \begin{align*}
+        W^{1}_{8 \times 8} &= \mathscr{M} \mid W_{A^1_{i,k},i}= 1, \neg(W_{A_{i,k},i}) = 0 \\
+        W^{2}_{8 \times 8} &= \mathscr{M} \mid W_{A^1_{i,k},i}= 1, \neg(W_{A_{i,k},i}) = 0
+    \end{align*}
     Example 4.12 (3 wavelengths, 2 ports, 4 gratings, 6 nodes): \\
     \[
         A^{1} =
@@ -391,7 +449,7 @@ Parent Function: \\
     \subsection{Numerical Results}
     Sirius leverages wavelength-division multiplexing across time slots. Our simulation shows dynamic power allocation across these slots allows for high throughput, though scheduling complexity increases with the number of wavelengths. The waterfilling algorithm effectively balances the power across available links and wavelengths to maximize total Shannon capacity.
 
-    \begin{figure}[h]
+    \begin{figure}[ht]
         \centering
         \begin{minipage}{0.48\textwidth}
             \centering
@@ -420,7 +478,7 @@ Parent Function: \\
     \subsection{Numerical Results}
     The GA-evolved topologies were tested against stochastic waterfilling to ensure robustness. The results show that the GA successfully identifies long-range shortcuts that minimize the average shortest path length (ASPL) while maximizing Shannon capacity for the target traffic.
 
-    \begin{figure}[h]
+    \begin{figure}[ht]
         \centering
         \begin{minipage}{0.48\textwidth}
             \centering
@@ -440,11 +498,11 @@ Parent Function: \\
     As shown in Figure \ref{fig:ga_low_lat}, the GA architecture maintains high performance even under latency constraints, as it prioritizes direct links for high-traffic pairs evolved during the optimization phase.
 
     \section{Performance Comparison}
-    We benchmarked all architectures—Opera, Shale, Sirius, and the Genetic Algorithm—under a skewed traffic pattern. The results, summarized in Figure \ref{fig:final_comp}, demonstrate the clear advantage of topology evolution. While static architectures like Opera and Shale perform well under uniform assumptions, they struggle with highly non-uniform demands where specific node pairs dominate the traffic.
+    We benchmarked all architectures --- Opera, Shale, Sirius, and the Genetic Algorithm --- under a skewed traffic pattern. The results, summarized in Figure~\ref{fig:final_comp}, demonstrate the clear advantage of topology evolution. While static architectures like Opera and Shale perform well under uniform assumptions, they struggle with highly non-uniform demands where specific node pairs dominate the traffic.
 
     The Genetic Algorithm, by evolving its connectivity specifically for the skewed traffic matrix, effectively "pre-allocates" capacity where it is most needed, resulting in significantly higher total Shannon capacity for the same aggregate power budget.
 
-    \begin{figure}[h]
+    \begin{figure}[ht]
         \centering
         \includegraphics[width=0.8\textwidth]{plots/final_comparison.png}
         \caption{Architecture Comparison under Skewed Traffic using Shannon Capacity}
