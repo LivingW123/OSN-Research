@@ -256,6 +256,67 @@
         \end{minipage}
     \end{figure}
 
+    \subsection{Numerical Components \& Formulas}
+    These parameters are critical for determining the bottleneck and ensuring the network meets its throughput guarantees.
+
+    \subsubsection{Determining the Bottleneck}
+    The network bottleneck is determined by comparing propagation delays against token budgets.
+    
+    \textbf{First-Hop Bottleneck Condition:} The network is not bottlenecked at the first hop if the propagation delay ($P$) satisfies:
+    \begin{equation}
+        P \le h \cdot T_F \cdot E
+    \end{equation}
+    where $h$ is the routing parameter (spraying depth), $T_F$ is the First-Hop Token Budget, and $E$ is the Epoch length in timeslots.
+
+    \textbf{Penultimate Link Bottleneck Condition:} To avoid bottlenecks on subsequent hops, the propagation delay must satisfy:
+    \begin{equation}
+        P \le h \cdot T \cdot (h \sqrt[h]{N} - 1) \cdot E
+    \end{equation}
+    where $T$ is the standard Token Budget and $\sqrt[h]{N}$ represents the fan-in/fan-out degree.
+
+    \subsubsection{Throughput \& Bandwidth Functions}
+    \textbf{Throughput Guarantee:} The theoretical throughput guarantee ($Th$) scales inversely with $h$:
+    \begin{itemize}
+        \item For $h=1$ (SRRD): $Th \approx 1/2$ line rate.
+        \item For $h=2$: $Th \approx 1/4$ line rate.
+        \item For $h=4$: $Th \approx 1/8$ line rate.
+    \end{itemize}
+
+    \textbf{Load Factor ($L$):} We define the Load Factor as:
+    \begin{equation}
+        L = \frac{\text{Average Sending Rate}}{\text{Total Available Bandwidth}}
+    \end{equation}
+
+    \textbf{Flow Completion Time (Normalized):} To measure performance across flow sizes, we use:
+    \begin{equation}
+        \text{Normalized FCT} = \frac{t}{F + P}
+    \end{equation}
+    where $t$ is actual completion time, $F$ is flow size (cells), and $P$ is propagation delay (timeslots).
+
+    \subsubsection{Simulation Findings}
+    We validated these formulas by sweeping the Load Factor $L$ from 0.05 to 0.60 for $h=1, 2, 4$. The results are shown in Figure \ref{fig:shale_load_sweep}.
+
+    \begin{figure}[H]
+        \centering
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/shale_throughput_vs_load.png}
+            \caption{Throughput vs Load}
+            \label{fig:shale_throughput}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{plots/shale_fct_vs_load.png}
+            \caption{Normalized FCT vs Load}
+            \label{fig:shale_fct}
+        \end{minipage}
+        \caption{Shale Performance Analysis under Varying Load}
+        \label{fig:shale_load_sweep}
+    \end{figure}
+
+    The simulation confirms the theoretical limits. For $h=1$, throughput saturates near 0.5. For $h=4$, saturation occurs near 0.125, matching the $1/8$ line rate guarantee. The FCT analysis shows that Normalized FCT remains low within the guaranteed throughput region but spikes once the load exceeds the theoretical limit derived from the spraying factor $h$.
+
     \subsubsection{Latency Sensitivity Analysis}
     Finally, we evaluate Shale under varying latency requirements using waterfilling on latency-constrained subgraphs.
 

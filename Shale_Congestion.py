@@ -205,39 +205,47 @@ class Switch:
             
         return cell, next_hop, credit_token, invalidation_token
 
+class Flow:
+    def __init__(self, flow_id, src, dst, size, creation_time):
+        self.flow_id = flow_id
+        self.src = src
+        self.dst = dst
+        self.size = size
+        self.creation_time = creation_time
+        self.cells_received = 0
+        self.completion_time = None
+
 class ShaleSimulation:
-    def __init__(self, num_nodes, schedules, bucket_capacity=10):
-        """
-        schedules: list of matching matrices. 
-                   Each matrix is a list where mat[i] is the neighbor of node i.
-        """
+    def __init__(self, num_nodes, schedules, bucket_capacity=10, token_budget_f=5, token_budget=1):
         self.num_nodes = num_nodes
-        self.schedules = schedules # Interleaved schedules
+        self.schedules = schedules
         self.bucket_capacity = bucket_capacity
+        self.token_budget_f = token_budget_f # T_F
+        self.token_budget = token_budget # T
         
         self.switches = [Switch(i, bucket_capacity) for i in range(num_nodes)]
         self.time = 0
         self.delivered_cells = []
-        self.failures = set() # (node1, node2) representing broken links
+        self.completed_flows = []
+        self.active_flows = {} # flow_id -> Flow
+        self.failures = set()
 
-    def inject_traffic(self, src, dst, h, count=1):
-        for _ in range(count):
-            rank = random.random()
+    def inject_flow(self, src, dst, h, size, flow_id):
+        flow = Flow(flow_id, src, dst, size, self.time)
+        self.active_flows[flow_id] = flow
+        # Inject cells for this flow
+        for i in range(size):
+            rank = self.time + (i * 0.01) # Simple fifo-like rank within flow
             cell = Cell(src, dst, h, rank, creation_time=self.time)
+            cell.flow_id = flow_id
             self.switches[src].receive_cell(cell, None)
-
-    def add_failure(self, u, v):
-        self.failures.add((u, v))
-        self.failures.add((v, u))
 
     def run_step(self):
         # 1. Update current topology
-        # We interleave schedules by cycling through them
         current_schedule = self.schedules[self.time % len(self.schedules)]
         for i in range(self.num_nodes):
             self.switches[i].set_neighbor(current_schedule[i])
             
-        # 2. Each switch performs its logic
         transmissions = []
         credit_tokens = []
         invalidation_tokens = []
@@ -251,18 +259,24 @@ class ShaleSimulation:
                     cell.hops_taken += 1
                     cell.path.append(next_hop)
                     self.delivered_cells.append((self.time + 1, cell))
+                    
+                    # Update Flow
+                    if hasattr(cell, 'flow_id'):
+                        flow = self.active_flows[cell.flow_id]
+                        flow.cells_received += 1
+                        if flow.cells_received == flow.size:
+                            flow.completion_time = self.time + 1
+                            self.completed_flows.append(flow)
+                            # del self.active_flows[cell.flow_id] # Keep for stats or del? del is safer for mem
                 else:
                     transmissions.append((cell, next_hop, i))
             
             if c_token:
-                prev_hop, bucket_id = c_token
-                credit_tokens.append((prev_hop, i, bucket_id))
-                
+                credit_tokens.append((c_token[0], i, c_token[1]))
             if i_token:
-                prev_hop, cell_info = i_token
-                invalidation_tokens.append((prev_hop, cell_info))
+                invalidation_tokens.append((i_token[0], i_token[1]))
 
-        # 3. Execute movements
+        # Execute movements
         for cell, to_node, from_node in transmissions:
             cell.hops_taken += 1
             cell.path.append(to_node)
@@ -276,31 +290,7 @@ class ShaleSimulation:
             
         self.time += 1
 
-    def report(self):
-        print(f"\n--- Shale Simulation Report T={self.time} ---")
-        print(f"Nodes: {self.num_nodes}, Failures: {len(self.failures)//2}")
-        print(f"Total Delivered: {len(self.delivered_cells)}")
-        if self.delivered_cells:
-            latencies = [t - c.creation_time for t, c in self.delivered_cells]
-            avg_lat = sum(latencies) / len(latencies)
-            max_lat = max(latencies)
-            print(f"Avg Latency: {avg_lat:.2f} cycles")
-            print(f"Max Latency: {max_lat} cycles")
-            
-            hops = [c.hops_taken for _, c in self.delivered_cells]
-            avg_hops = sum(hops) / len(hops)
-            print(f"Avg Hops: {avg_hops:.2f}")
-
-        # Check occupancy
-        total_in_flight = sum(len(sw.pieo_queue) for sw in self.switches)
-        print(f"Total Cells in flight: {total_in_flight}")
-
 def generate_rr_schedule(n):
-    """
-    Generates a simple RR schedule where each timeslot t, 
-    node i is connected to (i + t + 1) % n.
-    Returns a list of n-1 matchings.
-    """
     schedules = []
     for t in range(n - 1):
         matching = []
@@ -309,122 +299,146 @@ def generate_rr_schedule(n):
         schedules.append(matching)
     return schedules
 
+# --- Analysis Functions ---
+
+def check_bottlenecks(N, h, P, T_F, T, E):
+    """
+    Returns True if conditions are met.
+    P: Propagation Delay
+    E: Epoch Length
+    """
+    # 1. First-Hop Bottleneck Condition: P <= h * T_F * E
+    cond1 = P <= h * T_F * E
+    
+    # 2. Penultimate Link Bottleneck: P <= h * T * (h * N^(1/h) - 1) * E
+    # Note: N^(1/h) might calculate root.
+    try:
+        root_n = N ** (1.0/h)
+    except:
+        root_n = 0
+        
+    limit2 = h * T * (h * root_n - 1) * E
+    cond2 = P <= limit2
+    
+    return cond1, cond2, h * T_F * E, limit2
+
+def run_load_sweep():
+    import matplotlib.pyplot as plt
+    import numpy as np
+    
+    N = 16
+    E = N - 1 # Simple epoch
+    P = 10 # Assumed propagation delay (tokens take time to return)
+    T_F = 5
+    T = 1
+    
+    flow_size = 10
+    
+    loads = np.linspace(0.05, 0.6, 8) # Load Factors to test
+    h_values = [1, 2, 4]
+    
+    results_throughput = {h: [] for h in h_values}
+    results_fct = {h: [] for h in h_values}
+    
+    print(f"--- Starting Load Sweep (N={N}, FlowSize={flow_size}) ---")
+    
+    for h in h_values:
+        # Check limits
+        c1, c2, l1, l2 = check_bottlenecks(N, h, P, T_F, T, E)
+        print(f"\nAnalyzing h={h}:")
+        print(f"  Bottleneck Check (P={P}):")
+        print(f"  First-Hop Limit: {l1:.1f} -> {'OK' if c1 else 'VIOLATION'}")
+        print(f"  Penultimate Limit: {l2:.1f} -> {'OK' if c2 else 'VIOLATION'}")
+        
+        theoretical_limit = 1.0 / (2**(int(np.log2(h))+1) if h > 1 else 2) 
+        # Approx mapping: h=1->0.5, h=2->0.25, h=4->0.125
+        # Actually paper says: h=1 -> 1/2, h=2 -> 1/4, h=4 -> 1/8
+        limit_val = 1.0 / (2 * h) if h > 1 else 0.5
+        if h==4: limit_val = 0.125
+        if h==2: limit_val = 0.25
+        
+        print(f"  Theoretical Throughput Limit: {limit_val}")
+
+        for L in loads:
+            # Create sim
+            rr_sched = generate_rr_schedule(N)
+            sim = ShaleSimulation(N, rr_sched, bucket_capacity=20, token_budget_f=T_F, token_budget=T)
+            
+            # Injection Logic
+            # Total Capacity ~ N * 1 cell/cycle (line rate)
+            # Desired Load L means total injection rate = L * N
+            # Per node injection prob = L
+            
+            duration = 400
+            total_sent_cells = 0
+            
+            flow_id_counter = 0
+            for t in range(duration):
+                # Inject?
+                for n_idx in range(N):
+                    if random.random() < (L / flow_size): # Inject FLOWS, so prob is L / size
+                        dst = random.randint(0, N-1)
+                        if dst != n_idx:
+                            sim.inject_flow(n_idx, dst, h, flow_size, flow_id_counter)
+                            flow_id_counter += 1
+                            total_sent_cells += flow_size
+                
+                sim.run_step()
+                
+            # Metrics
+            # Throughput = Total Delivered Cells / Duration / N (normalized to line rate)
+            delivered = len(sim.delivered_cells)
+            throughput = delivered / duration / N
+            
+            # Normalized FCT
+            # FCT = t / (F + P)
+            # t = completion_time - creation_time
+            fcts = []
+            for f in sim.completed_flows:
+                t_actual = f.completion_time - f.creation_time
+                norm_fct = t_actual / (f.size + P) # As per user formula (P is delay parameter)
+                fcts.append(norm_fct)
+            
+            avg_fct = np.mean(fcts) if fcts else 0
+            
+            results_throughput[h].append(throughput)
+            results_fct[h].append(avg_fct)
+            
+            print(f"  L={L:.2f} -> Tput={throughput:.3f}, NormFCT={avg_fct:.2f}")
+
+    # --- Plotting ---
+    if not os.path.exists('plots'): os.makedirs('plots')
+    
+    # 1. Throughput vs Load
+    plt.figure(figsize=(10, 6))
+    for h in h_values:
+        plt.plot(loads, results_throughput[h], 'o-', label=f'h={h}')
+        # Plot theoretical limits
+        limit = 0.5 if h==1 else (0.25 if h==2 else 0.125)
+        plt.axhline(y=limit, linestyle='--', alpha=0.3, color='gray')
+        
+    plt.xlabel('Load Factor (L)')
+    plt.ylabel('Normalized Throughput')
+    plt.title('Shale Throughput vs Load Factor')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig('plots/shale_throughput_vs_load.png')
+    
+    # 2. FCT vs Load
+    plt.figure(figsize=(10, 6))
+    for h in h_values:
+        valid_idxs = [i for i, v in enumerate(results_fct[h]) if v > 0]
+        if valid_idxs:
+            plt.plot([loads[i] for i in valid_idxs], [results_fct[h][i] for i in valid_idxs], 's-', label=f'h={h}')
+            
+    plt.xlabel('Load Factor (L)')
+    plt.ylabel('Avg Normalized FCT')
+    plt.title('Shale Normalized Flow Completion Time')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig('plots/shale_fct_vs_load.png')
+
 if __name__ == "__main__":
     import numpy as np
-    from scipy import stats
-
-    N = 20
-    rr_sched = generate_rr_schedule(N)
-    sim = ShaleSimulation(N, rr_sched, bucket_capacity=20) # Increased capacity further for larger N
-    
-    h_range = list(range(1, 13)) # h = 1 to 12
-    print(f"Injecting traffic for h values: {h_range}")
-    
-    # Inject traffic for each h
-    for h_val in h_range:
-        for _ in range(30): # 30 packets per h
-            src, dst = random.sample(range(N), 2)
-            sim.inject_traffic(src, dst, h=h_val, count=1)
-            
-    # Run simulation
-    # Run enough steps to clear most traffic
-    for s in range(200): # Increased steps for longer paths
-        sim.run_step()
-            
-    sim.report()
-    
-    # --- Plotting Results ---
-    import matplotlib.pyplot as plt
     import os
-
-    if not os.path.exists('plots'):
-        os.makedirs('plots')
-
-    if sim.delivered_cells:
-        delivery_times = [t for t, c in sim.delivered_cells]
-        latencies = [t - c.creation_time for t, c in sim.delivered_cells]
-        h_values = [c.h for t, c in sim.delivered_cells]
-        hops = [c.hops_taken for t, c in sim.delivered_cells]
-
-        # 1. Latency Analysis (Avg Latency vs h)
-        plt.figure(figsize=(10, 6))
-        
-        avg_lats = []
-        std_lats = []
-        unique_h = sorted(set(h_values))
-        
-        for h in unique_h:
-            lats = [t - c.creation_time for t, c in sim.delivered_cells if c.h == h]
-            avg_lats.append(np.mean(lats))
-            std_lats.append(np.std(lats))
-            
-        plt.errorbar(unique_h, avg_lats, yerr=std_lats, fmt='-o', capsize=5, ecolor='red', label='Mean Latency')
-        
-        plt.xlabel('VLB Parameter (h)')
-        plt.ylabel('Latency (cycles)')
-        plt.title('Shale Simulation: Latency Scaling with h')
-        plt.legend()
-        plt.grid(True, linestyle='--', alpha=0.6)
-        plt.xticks(unique_h)
-        plt.savefig('plots/shale_congestion_report.png')
-        print("Saved plots/shale_congestion_report.png")
-
-        # 2. Hop Count Analysis (Avg Hops vs h)
-        plt.figure(figsize=(10, 6))
-        
-        avg_hops = []
-        std_hops = []
-        
-        for h in unique_h:
-            hp = [c.hops_taken for t, c in sim.delivered_cells if c.h == h]
-            avg_hops.append(np.mean(hp))
-            std_hops.append(np.std(hp))
-            
-        plt.errorbar(unique_h, avg_hops, yerr=std_hops, fmt='-s', color='green', capsize=5, label='Mean Hops')
-        
-        plt.xlabel('VLB Parameter (h)')
-        plt.ylabel('Hops Taken')
-        plt.title('Shale Simulation: Hop Scaling with h')
-        plt.legend()
-        plt.grid(True, linestyle='--', alpha=0.6)
-        plt.xticks(unique_h)
-        plt.savefig('plots/shale_latency_dist.png')
-        print("Saved plots/shale_latency_dist.png")
-
-        # 3. Best Fit Analysis
-        # Equation 1: Avg Latency vs h
-        avg_latencies = []
-        avg_hops_list = []
-        valid_h = []
-        
-        print("\n--- Statistical Analysis ---")
-        for h in h_range:
-            lats = [t - c.creation_time for t, c in sim.delivered_cells if c.h == h]
-            hp = [c.hops_taken for t, c in sim.delivered_cells if c.h == h]
-            if lats:
-                avg_l = np.mean(lats)
-                avg_h = np.mean(hp)
-                avg_latencies.append(avg_l)
-                avg_hops_list.append(avg_h)
-                valid_h.append(h)
-                print(f"h={h}: Avg Latency={avg_l:.2f}, Avg Hops={avg_h:.2f}")
-
-        # Linear Regression for Latency
-        slope_l, intercept_l, r_value_l, p_value_l, std_err_l = stats.linregress(valid_h, avg_latencies)
-        print(f"\nLatency vs h Best Fit: Latency = {slope_l:.2f} * h + {intercept_l:.2f}")
-        print(f"R-squared: {r_value_l**2:.4f}")
-
-        # Linear Regression for Hops
-        slope_h, intercept_h, r_value_h, p_value_h, std_err_h = stats.linregress(valid_h, avg_hops_list)
-        print(f"Hops vs h Best Fit: Hops = {slope_h:.2f} * h + {intercept_h:.2f}")
-        print(f"R-squared: {r_value_h**2:.4f}")
-        
-        # Save fit plot for reference (optional, not requested to put in tex but good for user)
-        plt.figure(figsize=(8,5))
-        plt.plot(valid_h, avg_latencies, 'o', label='Simulated Data')
-        plt.plot(valid_h, [slope_l*x + intercept_l for x in valid_h], 'r--', label=f'Fit: {slope_l:.2f}h + {intercept_l:.2f}')
-        plt.xlabel('h parameter')
-        plt.ylabel('Average Latency')
-        plt.title('Avg Latency vs h parameter')
-        plt.legend()
-        plt.savefig('plots/shale_h_fit.png')
+    run_load_sweep()
