@@ -104,10 +104,22 @@ def calculate_topology_capacity(adj_list, traffic_matrix, total_power=50, archit
             # Shannon capacity: demand * log2(1 + SNR)
             rate = demand * np.log2(1 + p/n)
             
-            # Special rule: for Opera (and potentially others), 1 slot per hop
-            # Capacity is reduced by factor of hops as it takes H slots to deliver the traffic
             if architecture_type == "opera":
-                capacity += rate / max(1, hops)
+                # Opera Hybrid Model (92% Bulk, 8% Short)
+                # Bulk: 1-hop, wait for circuit (98% efficient due to reconfig delay)
+                # Short: Expander (hops > 1), immediate
+                f_bulk = 0.92
+                f_short = 0.08
+                reconfig_efficiency = 0.98 # 1 - delta/slot_duration (1/50)
+                
+                # Bulk segment (Always treats as 1-hop but weighted by 0.92)
+                # Note: In real waterfilling over time, we'd wait. Here we're estimating aggregate.
+                cap_bulk = (f_bulk * rate * reconfig_efficiency) / 1.0
+                
+                # Short segment (Uses actual hops, weighted by 0.08)
+                cap_short = (f_short * rate) / max(1, hops)
+                
+                capacity += cap_bulk + cap_short
             else:
                 # For Sirius (slotted) or others, handles slotting in its own generation phase
                 # or assumes cut-through / parallel delivery if not specified

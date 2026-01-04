@@ -335,7 +335,7 @@ def run_load_sweep():
     flow_size = 10
     
     loads = np.linspace(0.05, 0.6, 8) # Load Factors to test
-    h_values = [1, 2, 4]
+    h_values = [1, 2, 4, 6, 8, 12]
     
     results_throughput = {h: [] for h in h_values}
     results_fct = {h: [] for h in h_values}
