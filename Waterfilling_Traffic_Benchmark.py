@@ -42,7 +42,9 @@ def run_comprehensive_benchmark():
         plt.subplot(1, 3, i)
         for name, adj in archs.items():
             caps = []
-            arch_type = "opera" if name == "Opera" else None
+            arch_type = name.lower() if name in ["Opera", "Shale", "Sirius"] else None
+            if name == "GA-Evolved": arch_type = None
+            
             for p in powers:
                 cap = calculate_topology_capacity(adj, traffic_matrix, total_power=p, architecture_type=arch_type)
                 caps.append(cap)

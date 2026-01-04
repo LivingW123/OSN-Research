@@ -106,23 +106,22 @@ def calculate_topology_capacity(adj_list, traffic_matrix, total_power=50, archit
             
             if architecture_type == "opera":
                 # Opera Hybrid Model (92% Bulk, 8% Short)
-                # Bulk: 1-hop, wait for circuit (98% efficient due to reconfig delay)
-                # Short: Expander (hops > 1), immediate
                 f_bulk = 0.92
                 f_short = 0.08
-                reconfig_efficiency = 0.98 # 1 - delta/slot_duration (1/50)
-                
-                # Bulk segment (Always treats as 1-hop but weighted by 0.92)
-                # Note: In real waterfilling over time, we'd wait. Here we're estimating aggregate.
-                cap_bulk = (f_bulk * rate * reconfig_efficiency) / 1.0
-                
-                # Short segment (Uses actual hops, weighted by 0.08)
-                cap_short = (f_short * rate) / max(1, hops)
-                
-                capacity += cap_bulk + cap_short
+                reconfig_eff = 0.98
+                capacity += (f_bulk * rate * reconfig_eff) + (f_short * rate / max(1, hops))
+            elif architecture_type == "shale":
+                # Shale VLB Model: Every flow is sprayed across h intermediate nodes
+                # Effective capacity is divided by (h + 1) hops. 
+                # For our base analysis, we'll assume h=2 (2 spraying hops + 1 deliver).
+                h_shale = 2
+                capacity += rate / (h_shale + 1)
+            elif architecture_type == "sirius":
+                # Sirius Model: Direct 1-hop path using dedicated wavelengths over time
+                # Very efficient direct transmission, but slightly limited by AWGR insertion loss (approx 95% eff)
+                capacity += rate * 0.95
             else:
-                # For Sirius (slotted) or others, handles slotting in its own generation phase
-                # or assumes cut-through / parallel delivery if not specified
+                # Default (e.g. GA)
                 capacity += rate
             
     return capacity
