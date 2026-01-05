@@ -20,7 +20,7 @@ class SiriusNode:
     def __init__(self, node_id, num_nodes, buffer_limit=1000):
         self.node_id = node_id
         self.queues = {dst: collections.deque() for dst in range(num_nodes) if dst != node_id}
-        self.indirect_buffer = collections.deque() # For packets arriving as intermediate
+        self.indirect_buffer = [] # Changed to list for indexed removal
         self.buffer_limit = buffer_limit
         self.credits = collections.defaultdict(int) # destination -> available credits at this node
         
@@ -71,13 +71,12 @@ class SiriusSimulation:
             # For each active port, prioritize direct traffic
             for v in neighbors:
                 # 1a. Check if any indirect traffic at 'u' needs to go to 'v' (2nd hop)
-                # Filter indirect buffer for packets whose ultimate destination is v
                 found_indirect = False
                 for i in range(len(self.nodes[u].indirect_buffer)):
                     pkt = self.nodes[u].indirect_buffer[i]
                     if pkt.dst == v:
                         # Deliver 2nd hop
-                        pkt = self.nodes[u].indirect_buffer.pop() # Simplified: just pop one
+                        self.nodes[u].indirect_buffer.pop(i) # Use list pop for specific index
                         pkt.delivery_time = t + 1
                         self.delivered_packets.append(pkt)
                         self.total_transmitted_cells += 1
@@ -127,14 +126,18 @@ def run_sirius_analysis():
         
         for t in range(duration):
             # Inject traffic based on load L
+            # Normalized load: L * N * P total packets per step
+            # Each node injects L * P packets on average
             for src in range(N):
-                if random.random() < L:
+                # Poisson arrival for each src node
+                num_to_inject = np.random.poisson(L * P)
+                for _ in range(num_to_inject):
                     dst = random.randint(0, N-1)
                     if dst != src:
                         sim.nodes[src].inject(dst, 1, t)
             sim.run_step()
             
-        tput = len(sim.delivered_packets) / (duration * N)
+        tput = len(sim.delivered_packets) / (duration * N * P)
         throughput_results.append(tput)
         
         fcts = [p.delivery_time - p.creation_time for p in sim.delivered_packets]

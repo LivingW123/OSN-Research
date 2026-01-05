@@ -334,7 +334,7 @@ def run_load_sweep():
     
     flow_size = 10
     
-    loads = np.linspace(0.05, 0.6, 8) # Load Factors to test
+    loads = np.linspace(0.05, 1.0, 10) # Sweep up to 1.0
     h_values = [1, 2, 4, 6, 8, 12]
     
     results_throughput = {h: [] for h in h_values}
@@ -350,14 +350,11 @@ def run_load_sweep():
         print(f"  First-Hop Limit: {l1:.1f} -> {'OK' if c1 else 'VIOLATION'}")
         print(f"  Penultimate Limit: {l2:.1f} -> {'OK' if c2 else 'VIOLATION'}")
         
-        theoretical_limit = 1.0 / (2**(int(np.log2(h))+1) if h > 1 else 2) 
-        # Approx mapping: h=1->0.5, h=2->0.25, h=4->0.125
-        # Actually paper says: h=1 -> 1/2, h=2 -> 1/4, h=4 -> 1/8
-        limit_val = 1.0 / (2 * h) if h > 1 else 0.5
-        if h==4: limit_val = 0.125
-        if h==2: limit_val = 0.25
+        # Shale Multi-hop VLB tax: Total hops = h (spray) + 1 (direct) = h+1
+        # Capacity = 1 / (h+1)
+        limit_val = 1.0 / (h + 1)
         
-        print(f"  Theoretical Throughput Limit: {limit_val}")
+        print(f"  Theoretical Throughput Limit: {limit_val:.3f}")
 
         for L in loads:
             # Create sim
@@ -413,8 +410,8 @@ def run_load_sweep():
     plt.figure(figsize=(10, 6))
     for h in h_values:
         plt.plot(loads, results_throughput[h], 'o-', label=f'h={h}')
-        # Plot theoretical limits
-        limit = 0.5 if h==1 else (0.25 if h==2 else 0.125)
+        # Plot theoretical limits: 1/(h+1)
+        limit = 1.0 / (h + 1)
         plt.axhline(y=limit, linestyle='--', alpha=0.3, color='gray')
         
     plt.xlabel('Load Factor (L)')

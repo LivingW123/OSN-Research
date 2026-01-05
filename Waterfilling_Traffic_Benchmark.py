@@ -20,11 +20,26 @@ def run_comprehensive_benchmark():
     powers = np.linspace(20, 100, 5)
     
     # 1. Topologies
+    # Opera: Staggered Latin Square
+    opera_adj = [[(v - 1) % N for v in row[:D]] for row in generate_random_latin_square(N)]
+    
+    # Shale: RR2 (Multi-dimensional Torus) - For N=9 (Base 3, Dim 2)
+    # Using a 9-node RR2 as a representative for Shale
+    shale_node_count = 9
+    shale_adj = RR2(3, 2)
+    
+    # Sirius: AWGR Schedule with P=4 ports
+    # Using generate_full_system(w=2, ports=4, N=10)
+    sirius_adj = [[(v - 1) % N for v in row] for row in generate_full_system(2, 4, N)[0][0]]
+    
+    # GA: Evolved for traffic
+    ga_adj = evolve_topology(N, D, generations=20, traffic_type="skewed")
+    
     archs = {
-        "Opera": [[(v - 1) % N for v in row[:D]] for row in generate_random_latin_square(N)],
-        "Shale": generate_random_topology(N, D),
-        "Sirius": [[(v - 1) % N for v in row] for row in generate_full_system(2, 2, N)[0][0]],
-        "GA-Evolved": evolve_topology(N, D, generations=20, traffic_type="skewed")
+        "Opera": opera_adj,
+        "Shale (RR2)": shale_adj,
+        "Sirius": sirius_adj,
+        "GA-Evolved": ga_adj
     }
     
     # 2. Traffic Benchmarks
