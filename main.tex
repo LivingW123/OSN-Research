@@ -551,27 +551,62 @@
         \end{bmatrix}
     \]
 
-    \subsection{Numerical Results}
-    Sirius leverages wavelength-division multiplexing across time slots. Our simulation shows dynamic power allocation across these slots allows for high throughput, though scheduling complexity increases with the number of wavelengths. The waterfilling algorithm effectively balances the power across available links and wavelengths to maximize total Shannon capacity.
+    Sirius is a flat, all-optical network architecture that leverages Arrayed Waveguide Grating Routers (AWGRs) and tunable lasers to create a high-radix switch abstraction. Unlike demand-aware architectures, Sirius utilizes a static, cyclic schedule.
 
-    \begin{figure}[ht]
+    \subsection{Architectural Components \& Numerical Parameters}
+    The network is composed of nodes with tunable lasers connected through a passive AWGR core. Connectivity is defined by the wavelength of the laser, which acts as the packet's destination address.
+
+    \paragraph{Timing Parameters}
+    The efficiency of Sirius is bounded by the ratio of laser reconfiguration time ($\delta$) to the total timeslot duration ($T_{slot}$):
+    \begin{itemize}
+        \item \textbf{Reconfiguration Time ($\delta$):} 3.84 ns (state-of-the-art tunable lasers).
+        \item \textbf{Timeslot Size ($T_{slot}$):} 100 ns (carrying ~576 bytes).
+        \item \textbf{Epoch Length ($E$):} $E = N$, where $N$ is the number of nodes per grating.
+    \end{itemize}
+
+    \paragraph{Routing \& Congestion Control}
+    Sirius employs a hybrid routing strategy:
+    \begin{enumerate}
+        \item \textbf{Direct Paths:} Cells are sent directly when the laser wavelength matches the destination's AWGR port.
+        \item \textbf{Indirect (Detour) Paths:} Idle bandwidth is utilized by "spraying" traffic through intermediate nodes (Valiant Load Balancing). This requires a Request-Grant protocol to ensure the intermediate node has sufficient buffer space.
+    \end{enumerate}
+
+    \subsection{Numerical Results \& Waterfilling Critique}
+    A standard waterfilling algorithm fails to accurately model Sirius because it assumes flexible capacity allocation, whereas Sirius has a fixed, time-slotted schedule.
+
+    \paragraph{Inverse Waterfilling Algorithm}
+    To test Sirius efficiency, we implement a modified "Inverse Waterfilling" algorithm that fills "valleys" in the static schedule:
+    \begin{enumerate}
+        \item \textbf{Primary Fill:} Allocate bandwidth to the \textbf{Direct} slot for pair $(u, v)$ first.
+        \item \textbf{Secondary Fill (Spraying):} Utilize idle slots on the path $u \to i$ if $i \to v$ is available in a future timeslot, subject to a \textbf{Credit Limit} ($C$).
+    \end{enumerate}
+
+    \begin{figure}[H]
         \centering
         \begin{minipage}{0.48\textwidth}
             \centering
-            \includegraphics[width=\textwidth]{plots/sirius_wf_ts0.png}
-            \caption{Sirius Waterfilling (TS 0)}
-            \label{fig:sirius_wf_0}
+            \includegraphics[width=\textwidth]{plots/sirius_efficiency_report.png}
+            \caption{Sirius Throughput and Latency vs Load}
+            \label{fig:sirius_efficiency}
         \end{minipage}
         \hfill
         \begin{minipage}{0.48\textwidth}
             \centering
-            \includegraphics[width=\textwidth]{plots/sirius_wf_ts1.png}
-            \caption{Sirius Waterfilling (TS 1)}
-            \label{fig:sirius_wf_1}
+            \includegraphics[width=\textwidth]{plots/sirius_inverse_wf.png}
+            \caption{Inverse Waterfilling: Scheduled vs Sprayed Capacity}
+            \label{fig:sirius_wf_critique}
         \end{minipage}
+        \caption{Sirius Performance under Static-Cyclic Scheduling}
     \end{figure}
 
-    Figures \ref{fig:sirius_wf_0} and \ref{fig:sirius_wf_1} illustrate the dynamic nature of power allocation in Sirius. Depending on the timeslot and the specific AWGR configuration, the capacity bottlenecks shift, requiring the waterfilling algorithm to adapt the power levels to maintain optical efficiency.
+    Our simulation (Figure \ref{fig:sirius_efficiency}) indicates that Sirius maintains high utilization up to a load of 0.85, beyond which queuing delay at intermediate nodes becomes the dominant bottleneck.
+
+    \paragraph{Proposed Sirius Theorem}
+    \textbf{Theorem (Throughput Duality in Cyclic Networks)}: For a time-slotted hybrid network with a fixed schedule $\mathcal{S}$, the maximum achievable throughput $\Theta$ under a dual-hop spraying regime is given by:
+    \begin{equation}
+        \Theta = \sum_{t=1}^{E} \mathbb{I}(\text{Direct}_{u,v,t}) + \min \left( \mathcal{C}, \sum_{t=1}^{E} \sum_{i \in V} \mathbb{I}(\text{Indirect}_{u,i,v,t}) \right)
+    \end{equation}
+    where $\mathcal{C}$ is the credit-limit constraint of the request-grant protocol and $\mathbb{I}$ is the indicator of timeslot availability.
 
     \section{Genetic Algorithm}
     To go beyond fixed architectures, we developed a hybrid Genetic Algorithm (GA). The goal is to evolve a topology $W$ that maximizes fitness:
