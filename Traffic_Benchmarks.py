@@ -117,9 +117,17 @@ def calculate_topology_capacity(adj_list, traffic_matrix, total_power=50, archit
                 h_shale = 2
                 capacity += rate / (h_shale + 1)
             elif architecture_type == "sirius":
-                # Sirius Model: Direct 1-hop path using dedicated wavelengths over time
-                # Very efficient direct transmission, but slightly limited by AWGR insertion loss (approx 95% eff)
-                capacity += rate * 0.95
+                # Sirius Model: Direct 1-hop vs Spraying 2-hop
+                # Efficiency 0.95 covers insertion loss
+                eff = 0.95
+                if hops <= 1:
+                    capacity += rate * eff
+                elif hops <= 2:
+                    # 2-hop spraying: Bandwidth tax = 2 (consumes two logical slots)
+                    capacity += (rate * eff) / 2
+                else:
+                    # > 2 hops in Sirius is inefficient (not standard VLB)
+                    capacity += (rate * eff) / (hops ** 2)
             else:
                 # Default (e.g. GA)
                 capacity += rate

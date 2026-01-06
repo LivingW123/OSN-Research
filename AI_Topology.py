@@ -97,7 +97,7 @@ def genome_to_adj(genome, num_nodes, frozen_backbone=None):
             idx += 1
     return [list(x) for x in adj]
 
-def evolve_topology(num_nodes, target_degree, population_size=10, generations=20, 
+def evolve_topology(num_nodes, target_degree, population_size=15, generations=50, 
                     traffic_type="uniform", frozen_backbone=None):
     """
     Evolves a network topology using PyGAD.
@@ -106,40 +106,47 @@ def evolve_topology(num_nodes, target_degree, population_size=10, generations=20
 
     print(f"AI Evolving Topology (PyGAD) (N={num_nodes}, D={target_degree}, Traffic={traffic_type})...")
     
-    # Generate Traffic Matrix based on type
-    if traffic_type == "uniform":
-        traffic_matrix = generate_uniform_traffic(num_nodes)
+    # Generate Traffic Matrices
+    traffic_matrices = []
+    if traffic_type == "robust":
+        traffic_matrices = [
+            generate_uniform_traffic(num_nodes),
+            generate_skewed_traffic(num_nodes),
+            generate_hotspot_traffic(num_nodes, hotspot_nodes=[0, 1])
+        ]
+    elif traffic_type == "uniform":
+        traffic_matrices = [generate_uniform_traffic(num_nodes)]
     elif traffic_type == "hotspot":
-        traffic_matrix = generate_hotspot_traffic(num_nodes, hotspot_nodes=[0])
+        traffic_matrices = [generate_hotspot_traffic(num_nodes, hotspot_nodes=[0, 1])]
     elif traffic_type == "skewed":
-        traffic_matrix = generate_skewed_traffic(num_nodes)
+        traffic_matrices = [generate_skewed_traffic(num_nodes)]
     else:
-        traffic_matrix = generate_uniform_traffic(num_nodes)
+        traffic_matrices = [generate_uniform_traffic(num_nodes)]
 
     num_genes = num_nodes * (num_nodes - 1) // 2
     
     def fitness_func(ga_instance, solution, solution_idx):
         adj = genome_to_adj(solution, num_nodes, frozen_backbone=frozen_backbone)
         
-        # 1. ASPL Score
+        # 1. Connectivity Check
         aspl = calculate_aspl(adj)
         if aspl == float('inf'):
-            return 0.0001 # Extremely low fitness for disconnected graphs
+            return 0.0001
             
-        # 2. Capacity Score (Direct performance metric)
-        capacity = calculate_topology_capacity(adj, traffic_matrix)
+        # 2. Capacity Score (Average over all target traffic matrices)
+        avg_capacity = np.mean([calculate_topology_capacity(adj, tm) for tm in traffic_matrices])
         
-        # 3. Degree Penalty
-        degree_penalty = 0
-        for neighbors in adj:
-            d = len(neighbors)
-            degree_penalty += abs(d - target_degree)
+        # 3. Degree Distribution Penalty
+        degrees = [len(neighbors) for neighbors in adj]
+        # Stronger penalty for exceeding max degree or having too few links
+        avg_degree = np.mean(degrees)
+        degree_var = np.var(degrees)
+        degree_penalty = abs(avg_degree - target_degree) * 5 + degree_var * 2
             
         # Composite Fitness: 
-        # Increase fitness for high capacity and low ASPL
-        # Reduce for degree deviation
-        
-        fitness = (capacity * 0.5) + (1.0 / aspl) - (degree_penalty * 0.2)
+        # Capacity is usually 50-200. ASPL is 1.5-3.0.
+        # We want to balance them.
+        fitness = (avg_capacity * 0.1) + (10.0 / aspl) - degree_penalty
         
         return max(fitness, 0.0001)
 
@@ -162,8 +169,8 @@ def evolve_topology(num_nodes, target_degree, population_size=10, generations=20
     
     best_adj = genome_to_adj(solution, num_nodes, frozen_backbone=frozen_backbone)
     actual_aspl = calculate_aspl(best_adj)
-    final_cap = calculate_topology_capacity(best_adj, traffic_matrix)
-    print(f"Best ASPL: {actual_aspl:.4f} | Final Capacity: {final_cap:.4f}")
+    final_cap = np.mean([calculate_topology_capacity(best_adj, tm) for tm in traffic_matrices])
+    print(f"Best ASPL: {actual_aspl:.4f} | Final Avg Capacity: {final_cap:.4f}")
     
     return best_adj
 
