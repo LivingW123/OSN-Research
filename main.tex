@@ -639,17 +639,20 @@
     \subsection{Robust Evolution Strategy}
     Earlier versions of the GA tended to overfit to specific traffic distributions (e.g., skewed). We implemented a "Robust Evolution" strategy where candidates are evaluated against the entire suite of traffic models. This prevents the formation of "lucky" links and instead forces the evolution of generalized expander properties with high-capacity shortcuts for dominant pairs.
 
-    \paragraph{Example 5.1 (GA-Robust for N=6)}:
-    The resulting adjacency matrix $W$ for a robustly evolved topology highlights the symmetry and diversity of links:
+    \paragraph{Example 5.1 (GA-Robust for N=9)}:
+    The resulting adjacency matrix $W$ for a robustly evolved topology ($N=9, D=4$) highlights the symmetry and diversity of links identified by the genetic algorithm to satisfy diverse traffic demands:
     \[
         W_{GA} = 
         \begin{bmatrix}
-            0 & 1 & 1 & 0 & 1 & 1 \\
-            1 & 0 & 1 & 1 & 1 & 0 \\
-            1 & 1 & 0 & 1 & 0 & 1 \\
-            0 & 1 & 1 & 0 & 1 & 1 \\
-            1 & 1 & 0 & 1 & 0 & 1 \\
-            1 & 0 & 1 & 1 & 1 & 0 \\
+            0 & 1 & 0 & 1 & 0 & 0 & 1 & 1 & 0 \\
+            1 & 0 & 1 & 0 & 1 & 0 & 1 & 0 & 0 \\
+            0 & 1 & 0 & 1 & 0 & 1 & 0 & 0 & 1 \\
+            1 & 0 & 1 & 0 & 0 & 1 & 1 & 0 & 1 \\
+            0 & 1 & 0 & 0 & 0 & 1 & 1 & 1 & 0 \\
+            0 & 0 & 1 & 1 & 1 & 0 & 0 & 1 & 0 \\
+            1 & 1 & 0 & 1 & 1 & 0 & 0 & 0 & 1 \\
+            1 & 0 & 0 & 0 & 1 & 1 & 0 & 0 & 1 \\
+            0 & 0 & 1 & 1 & 0 & 0 & 1 & 1 & 0 \\
         \end{bmatrix}
     \]
 
