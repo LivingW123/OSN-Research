@@ -31,14 +31,12 @@ def sirius_inverse_waterfilling(demand_matrix, connectivity_tensor, credit_limit
                     link_utilization[t, u] = sendable
                     
     # 2. Secondary Fill: Spraying (Indirect Paths)
-    # Goal: Use idle slots (valleys) to send to intermediate nodes
     for t in range(T):
         for u in range(N):
             if link_utilization[t, u] < 1.0:
                 remaining_link = 1.0 - link_utilization[t, u]
                 
                 # Find an intermediate node 'i' that 'u' is currently connected to
-                # In Sirius, u is connected to some 'i' at time t
                 intermediate_i = -1
                 for i in range(N):
                     if connectivity_tensor[t, u, i] == 1:
@@ -47,7 +45,6 @@ def sirius_inverse_waterfilling(demand_matrix, connectivity_tensor, credit_limit
                 
                 if intermediate_i != -1:
                     # Spray traffic destined for some 'v' through 'i'
-                    # Constraint: Credit Limit C
                     for v in range(N):
                         if demand_matrix[u, v] > 0 and v != intermediate_i:
                             spray_amt = min(demand_matrix[u, v], remaining_link, credit_limit)

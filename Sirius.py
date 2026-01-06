@@ -103,8 +103,6 @@ def generate_full_system(wavelengths, ports, nodes):
     P = create_matrix_P(wavelengths, nodes)
     
     # 3. Generate the full cycle
-    # The cycle length is equal to the number of wavelengths.
-    # We already have the 1st one, so we generate w-1 more.
     for _ in range(wavelengths - 1):
         # A_next = P * A_current
         next_A = matrix_multiply(P, A_list[-1])
@@ -223,8 +221,6 @@ def generate_full_system(wavelengths, ports, nodes):
     P = create_matrix_P(wavelengths, nodes)
     
     # 3. Generate the full cycle
-    # The cycle length is equal to the number of wavelengths.
-    # We already have the 1st one, so we generate w-1 more.
     for _ in range(wavelengths - 1):
         # A_next = P * A_current
         next_A = matrix_multiply(P, A_list[-1])

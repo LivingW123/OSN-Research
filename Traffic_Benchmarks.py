@@ -112,24 +112,18 @@ def calculate_topology_capacity(adj_list, traffic_matrix, total_power=50, archit
                 capacity += (f_bulk * rate * reconfig_eff) + (f_short * rate / max(1, hops))
             elif architecture_type == "shale":
                 # Shale VLB Model: Every flow is sprayed across h intermediate nodes
-                # Effective capacity is divided by (h + 1) hops. 
-                # For our base analysis, we'll assume h=2 (2 spraying hops + 1 deliver).
                 h_shale = 2
                 capacity += rate / (h_shale + 1)
             elif architecture_type == "sirius":
                 # Sirius Model: Direct 1-hop vs Spraying 2-hop
-                # Efficiency 0.95 covers insertion loss
                 eff = 0.95
                 if hops <= 1:
                     capacity += rate * eff
                 elif hops <= 2:
-                    # 2-hop spraying: Bandwidth tax = 2 (consumes two logical slots)
                     capacity += (rate * eff) / 2
                 else:
-                    # > 2 hops in Sirius is inefficient (not standard VLB)
                     capacity += (rate * eff) / (hops ** 2)
             else:
-                # Default (e.g. GA)
                 capacity += rate
             
     return capacity

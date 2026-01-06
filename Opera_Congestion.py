@@ -24,14 +24,10 @@ class OperaSimulation:
         self.slot_duration = slot_duration
         self.cycle_time = (num_nodes - 1) * slot_duration
         
-        # Each switch k has its own schedule (disjoint matchings)
-        # We'll use Latin Squares to ensure each node has one uplink per switch
-        # For simplicity, we'll shift the initial Latin Square for each switch
+        # disjoint matching, shift the initial Latin Square for each switch
         base_square = self._generate_latin_square(num_nodes)
         self.schedules = []
         for k in range(num_switches):
-            # Staggered schedules: shift columns/rows or just use different squares
-            # Here we just permute to get disjoint-ish behavior
             sched = np.roll(base_square, k, axis=0).tolist()
             self.schedules.append(sched)
             
@@ -48,13 +44,6 @@ class OperaSimulation:
         return np.array([np.roll(row, -i) for i in range(n)])
 
     def get_current_neighbor(self, switch_idx, node_idx):
-        # Determine current matching index in the cycle
-        # Cycle consists of (N-1) matchings? Or N? 
-        # Usually N-1 if we exclude self-connection.
-        # But latin square includes self.
-        
-        # Stagger switches: Switch k starts its cycle at t = k * (slot_duration // K)?
-        # Paper says staggered reconfiguration.
         t_offset = (switch_idx * self.cycle_time) // self.K
         current_t = (self.time + t_offset) % self.cycle_time
         
@@ -128,11 +117,8 @@ class OperaSimulation:
                 path = self.get_shortest_path(src, pkt.dst)
                 
                 if path:
-                    # We can move one hop along this path using the switch that provides it
+                    # One hop and one expander packet
                     next_hop = path[0]
-                    # Since we only process one "transmission" per step per switch for simplicity
-                    # but a node has K ports, it could theoretically send K packets.
-                    # We'll allow one expander packet per node per step to avoid complexity.
                     pkt = self.queues[src].popleft()
                     pkt.hops_taken += 1
                     if next_hop == pkt.dst:

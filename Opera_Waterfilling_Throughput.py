@@ -25,22 +25,10 @@ def run_opera_wf_load_test():
     print("--- Running Opera Waterfilling Throughput vs Load ---")
     
     # Calculate fixed capacity limit once (assuming full utilization)
-    # Using P=60 as standard power level
-    cap_limit = calculate_topology_capacity(opera_links, base_traffic, 
-                                          total_power=total_power, 
-                                          architecture_type="opera")
-    
-    # Normalize cap_limit to a 'rate per node' or similar
-    # In calculate_topology_capacity, cap is sum-rate.
-    # We'll normalize by N to get avg throughput per node.
+    cap_limit = calculate_topology_capacity(opera_links, base_traffic, total_power=total_power, architecture_type="opera")
     norm_cap = cap_limit / N
     
     for L in loads:
-        # Load L represents requested rate per node
-        # Delivered Throughput = min(Requested Load, Capacity Limit)
-        # However, congestion effects often reduce efficiency near limits.
-        # We'll simulate a slight "efficiency drop off" as L approaches Capacity.
-        
         # Simplified Throughput model based on Waterfilling bounds:
         # Tput = L if L < Capacity * 0.8 else min(L, Capacity) - congestion_penalty
         

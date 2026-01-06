@@ -121,10 +121,7 @@ def RR2_path(adj_matrix, weights, start_node, end_node):
             if neighbors is not None:
                 for neighbor in neighbors:
                     if neighbor is not None and neighbor not in path:
-                        # Calculate new cost
                         new_cost = cost + weights.get(neighbor, 0)
-                        
-                        # Create new path list
                         new_path = path + [neighbor]
                         
                         stack.append((neighbor, new_path, new_cost))

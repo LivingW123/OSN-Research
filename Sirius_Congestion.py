@@ -99,7 +99,6 @@ class SiriusSimulation:
                     # and use 'v' as intermediate node
                     for d, q in self.nodes[u].queues.items():
                         if q and d != v:
-                            # In Sirius, we'd check if 'v' has buffer space (Request-Grant)
                             if len(self.nodes[v].indirect_buffer) < 50: # Credit Limit C
                                 pkt = q.popleft()
                                 pkt.is_indirect = True
@@ -126,8 +125,6 @@ def run_sirius_analysis():
         
         for t in range(duration):
             # Inject traffic based on load L
-            # Normalized load: L * N * P total packets per step
-            # Each node injects L * P packets on average
             for src in range(N):
                 # Poisson arrival for each src node
                 num_to_inject = np.random.poisson(L * P)

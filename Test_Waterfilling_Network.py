@@ -81,7 +81,6 @@ def test_shale_waterfilling():
     visualize_waterfilling(h1_noise, total_power, title="Shale VLB - Low Latency (h=1)", filename="shale_h1_wf")
 
     # 2. High Throughput / Spread (h=4) Waterfilling
-    # Sprayed paths accumulate noise across hops (simulated here as 2.5x base noise)
     print("Scenario: High Throughput Sprayed Traffic (h=4)")
     h4_noise = [n * 2.5 for n in h1_noise]
     h4_alloc = waterfilling(h4_noise, total_power)
@@ -268,44 +267,44 @@ def generate_diurnal_power(num_timeslots, baseline=30, amplitude=20):
     t = np.arange(num_timeslots)
     return baseline + amplitude * np.sin(2 * np.pi * t / num_timeslots)
 
-def test_diurnal_waterfilling():
-    print("\n=== Testing Diurnal Traffic Patterns ===")
-    num_timeslots = 24 # 24 hours
-    num_channels = 5
+# def test_diurnal_waterfilling():
+#     print("\n=== Testing Diurnal Traffic Patterns ===")
+#     num_timeslots = 24 # 24 hours
+#     num_channels = 5
     
-    # Noise levels per channel (constant for simplicity)
-    noise = [10, 15, 5, 20, 25]
-    channels = [noise for _ in range(num_timeslots)]
+#     # Noise levels per channel (constant for simplicity)
+#     noise = [10, 15, 5, 20, 25]
+#     channels = [noise for _ in range(num_timeslots)]
     
-    # Diurnal power budget
-    power_budgets = generate_diurnal_power(num_timeslots)
+#     # Diurnal power budget
+#     power_budgets = generate_diurnal_power(num_timeslots)
     
-    print(f"Power Budgets (24h): {power_budgets[:5]} ... {power_budgets[-5:]}")
+#     print(f"Power Budgets (24h): {power_budgets[:5]} ... {power_budgets[-5:]}")
     
-    allocations = waterfilling(channels, power_budgets)
+#     allocations = waterfilling(channels, power_budgets)
     
-    # Calculate total capacity over time
-    capacities = []
-    for t in range(num_timeslots):
-        snr = allocations[t] / np.array(noise)
-        cap = np.sum(np.log2(1 + snr))
-        capacities.append(cap)
+#     # Calculate total capacity over time
+#     capacities = []
+#     for t in range(num_timeslots):
+#         snr = allocations[t] / np.array(noise)
+#         cap = np.sum(np.log2(1 + snr))
+#         capacities.append(cap)
         
-    plt.figure(figsize=(10, 5))
-    plt.plot(range(num_timeslots), power_budgets, label='Power Budget (Diurnal)', color='orange', marker='o')
-    plt.plot(range(num_timeslots), capacities, label='Capacity (Sum Rate)', color='blue', marker='x')
-    plt.xlabel("Hour of Day")
-    plt.ylabel("Value")
-    plt.title("Diurnal Waterfilling Performance")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig("plots/diurnal_performance.png")
-    plt.show()
+#     plt.figure(figsize=(10, 5))
+#     plt.plot(range(num_timeslots), power_budgets, label='Power Budget (Diurnal)', color='orange', marker='o')
+#     plt.plot(range(num_timeslots), capacities, label='Capacity (Sum Rate)', color='blue', marker='x')
+#     plt.xlabel("Hour of Day")
+#     plt.ylabel("Value")
+#     plt.title("Diurnal Waterfilling Performance")
+#     plt.legend()
+#     plt.grid(True, alpha=0.3)
+#     plt.savefig("plots/diurnal_performance.png")
+#     plt.show()
     
-    # Visualize specific timeslots (Day vs Night)
-    # Noon (peak power) vs Midnight (low power)
-    visualize_waterfilling(noise, power_budgets[12], title="Diurnal Waterfilling - Noon (Peak)", filename="diurnal_noon")
-    visualize_waterfilling(noise, power_budgets[0], title="Diurnal Waterfilling - Midnight (Low)", filename="diurnal_midnight")
+#     # Visualize specific timeslots (Day vs Night)
+#     # Noon (peak power) vs Midnight (low power)
+#     visualize_waterfilling(noise, power_budgets[12], title="Diurnal Waterfilling - Noon (Peak)", filename="diurnal_noon")
+#     visualize_waterfilling(noise, power_budgets[0], title="Diurnal Waterfilling - Midnight (Low)", filename="diurnal_midnight")
 
 def test_latency_scenarios():
     print("\n=== Testing Latency Scenarios (Low vs High) ===")
@@ -317,8 +316,6 @@ def test_latency_scenarios():
     
     # Low Latency: 1-hop path exists
     # High Latency: Must wait for multiple timeslots/hops
-    # In Waterfilling terms, we model this by the strictness of power allocation
-    # or the noise level perceived. High latency paths might have more accumulated noise.
     
     print("Opera Low Latency: Single-hop links.")
     visualize_waterfilling(noise, 50, title="Opera - Low Latency", filename="opera_low_latency")
@@ -358,7 +355,6 @@ def test_genetic_algorithm_waterfilling():
     best_adj = evolve_topology(num_nodes, degree, population_size=10, generations=20)
     
     # 2. Timeslots = Nodes
-    # At each timeslot 'i', we perform waterfilling on the links of Node 'i'
     
     all_timeslots_noise = []
     
@@ -369,9 +365,6 @@ def test_genetic_algorithm_waterfilling():
         
         # Link noise for this node's neighborhood
         node_noise = [random.randint(5, 25) for _ in range(num_links)]
-        
-        # Padding to keep consistent channel count for 2D waterfilling visualization 
-        # (Alternatively, we can call it for each node individually)
         all_timeslots_noise.append(node_noise)
         
         print(f"Node {i} (Timeslot {i}) has {num_links} links: {neighbors}. Noise: {node_noise}")
@@ -587,21 +580,16 @@ def compare_waterfilling_performance():
     
     # 1. Opera Setup (Regular Latin Square)
     opera_adj = generate_random_latin_square(num_nodes)
-    # Convert to adj list (degree 4 subset) and ensure 0-indexed
     opera_links = [[(v - 1) % num_nodes for v in row[:target_degree]] for row in opera_adj]
     
     # 2. Shale Setup (RR2)
-    # For fair N=10 comparison, use a random regular topology as 'Shale-like'
     shale_links = generate_random_topology(num_nodes, target_degree)
 
     # 3. Sirius Setup
-    # wavelengths=2, ports=2, nodes=10
     As, Ws, P = generate_full_system(2, 2, num_nodes)
-    # Ensure neighbor IDs are 0-indexed and within bounds
     sirius_links = [[(v - 1) % num_nodes for v in row] for row in As[0]]
 
     # 4. Evolution - Hybrid GA
-    # Use a simple Ring as frozen backbone (Degree 2)
     ring_backbone = [[] for _ in range(num_nodes)]
     for i in range(num_nodes):
         ring_backbone[i].append((i + 1) % num_nodes)

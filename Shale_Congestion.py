@@ -309,9 +309,7 @@ def check_bottlenecks(N, h, P, T_F, T, E):
     """
     # 1. First-Hop Bottleneck Condition: P <= h * T_F * E
     cond1 = P <= h * T_F * E
-    
     # 2. Penultimate Link Bottleneck: P <= h * T * (h * N^(1/h) - 1) * E
-    # Note: N^(1/h) might calculate root.
     try:
         root_n = N ** (1.0/h)
     except:
@@ -328,7 +326,7 @@ def run_load_sweep():
     
     N = 16
     E = N - 1 # Simple epoch
-    P = 10 # Assumed propagation delay (tokens take time to return)
+    P = 10
     T_F = 5
     T = 1
     
@@ -357,7 +355,6 @@ def run_load_sweep():
         print(f"  Theoretical Throughput Limit: {limit_val:.3f}")
 
         for L in loads:
-            # Create sim
             rr_sched = generate_rr_schedule(N)
             sim = ShaleSimulation(N, rr_sched, bucket_capacity=20, token_budget_f=T_F, token_budget=T)
             
@@ -383,7 +380,6 @@ def run_load_sweep():
                 sim.run_step()
                 
             # Metrics
-            # Throughput = Total Delivered Cells / Duration / N (normalized to line rate)
             delivered = len(sim.delivered_cells)
             throughput = delivered / duration / N
             
@@ -393,7 +389,7 @@ def run_load_sweep():
             fcts = []
             for f in sim.completed_flows:
                 t_actual = f.completion_time - f.creation_time
-                norm_fct = t_actual / (f.size + P) # As per user formula (P is delay parameter)
+                norm_fct = t_actual / (f.size + P)
                 fcts.append(norm_fct)
             
             avg_fct = np.mean(fcts) if fcts else 0

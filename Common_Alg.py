@@ -175,12 +175,11 @@ def create_random_constrained_matrix(list_of_sets):
     for s in shuffled_sets:
         random.shuffle(s)
     
-    pos = 0  # Current position (0 to n*k - 1)
-    attempts = [0] * (n * k)  # Track which number index we're trying at each position
+    pos = 0
+    attempts = [0] * (n * k)
     
     while pos >= 0:
         if pos == n * k:
-            # Found a solution
             return matrix
         
         row = pos // k
@@ -206,11 +205,9 @@ def create_random_constrained_matrix(list_of_sets):
                 break
         
         if found:
-            # Move forward
             pos += 1
         else:
-            # Backtrack
-            attempts[pos] = 0  # Reset attempts for this position
+            attempts[pos] = 0
             pos -= 1
     
     return None

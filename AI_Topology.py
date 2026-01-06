@@ -143,9 +143,7 @@ def evolve_topology(num_nodes, target_degree, population_size=15, generations=50
         degree_var = np.var(degrees)
         degree_penalty = abs(avg_degree - target_degree) * 5 + degree_var * 2
             
-        # Composite Fitness: 
-        # Capacity is usually 50-200. ASPL is 1.5-3.0.
-        # We want to balance them.
+        # Composite Fitness: Capacity is usually 50-200. ASPL is 1.5-3.0.
         fitness = (avg_capacity * 0.1) + (10.0 / aspl) - degree_penalty
         
         return max(fitness, 0.0001)
