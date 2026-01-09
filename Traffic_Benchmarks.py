@@ -92,8 +92,10 @@ def calculate_topology_capacity(adj_list, traffic_matrix, total_power=50, archit
     # 3. Perform Waterfilling
     allocations = waterfilling(channels_noise, total_power)
     
-    # 4. Sum up Weighted Capacity
-    capacity = 0
+    # 4. Sum up Weighted Capacity (and calculate Completion Time)
+    total_completion_time = 0
+    total_capacity = 0
+    
     for idx in range(len(channels_noise)):
         p = allocations[idx]
         n = channels_noise[idx]
@@ -104,26 +106,38 @@ def calculate_topology_capacity(adj_list, traffic_matrix, total_power=50, archit
             # Shannon capacity: demand * log2(1 + SNR)
             rate = demand * np.log2(1 + p/n)
             
+            # Apply architecture-specific penalties
+            effective_rate = rate
             if architecture_type == "opera":
                 # Opera Hybrid Model (92% Bulk, 8% Short)
                 f_bulk = 0.92
                 f_short = 0.08
                 reconfig_eff = 0.98
-                capacity += (f_bulk * rate * reconfig_eff) + (f_short * rate / max(1, hops))
+                effective_rate = (f_bulk * rate * reconfig_eff) + (f_short * rate / max(1, hops))
             elif architecture_type == "shale":
                 # Shale VLB Model: Every flow is sprayed across h intermediate nodes
                 h_shale = 2
-                capacity += rate / (h_shale + 1)
+                effective_rate = rate / (h_shale + 1)
             elif architecture_type == "sirius":
                 # Sirius Model: Direct 1-hop vs Spraying 2-hop
                 eff = 0.95
                 if hops <= 1:
-                    capacity += rate * eff
+                    effective_rate = rate * eff
                 elif hops <= 2:
-                    capacity += (rate * eff) / 2
+                    effective_rate = (rate * eff) / 2
                 else:
-                    capacity += (rate * eff) / (hops ** 2)
-            else:
-                capacity += rate
+                    effective_rate = (rate * eff) / (hops ** 2)
             
-    return capacity
+            total_capacity += effective_rate
+            
+            # Completion Time Calculation: Time = Volume / Rate
+            # We assume 'demand' here represents the Volume of the flow for the Completion Time metric.
+            if effective_rate > 1e-9:
+                total_completion_time += demand / effective_rate
+            else:
+                total_completion_time += 1e6 # Penalty for zero rate
+        else:
+             total_completion_time += 1e6 # Penalty for unallocated flow
+
+    # Return Total Completion Time instead of Capacity
+    return total_completion_time

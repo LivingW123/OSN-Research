@@ -68,14 +68,14 @@ def run_comprehensive_benchmark():
             plt.plot(powers, caps, marker='o', label=name)
         
         plt.title(f"{traffic_name} Traffic")
-        plt.xlabel("Power Budget (P)")
-        plt.ylabel("Shannon Capacity")
+        plt.xlabel("Power Budget (Arbitrary Units)")
+        plt.ylabel("Total Flow Completion Time (s)")
         if i == 1: plt.legend()
         plt.grid(True, alpha=0.3)
         
     plt.tight_layout()
-    plt.savefig("plots/traffic_benchmark_capacity.png")
-    print("Saved plots/traffic_benchmark_capacity.png")
+    plt.savefig("plots/traffic_benchmark_completion_time.png")
+    print("Saved plots/traffic_benchmark_completion_time.png")
 
 if __name__ == "__main__":
     # Mocking evolve_topology locally if import fails or is slow

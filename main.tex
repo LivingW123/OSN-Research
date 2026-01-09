@@ -12,36 +12,28 @@
 \begin{document}
     \maketitle
     \section{Shale}
-    $V$ is represented as a matrix of the sending node as rows and receiving node
-    as columns
+    $V$ is the connectivity matrix at a point in time $t$, representing the active links/circuits.
     \[
         V = \mathscr{M}_{n \times n}
     \]
-    $D$ is the sending data represented as a matrix with b bits and n nodes
+    We specifically define the entries of the adjacency/connectivity matrix $V$ such that $V_{ij} = 1$ if a link exists between $i$ and $j$, and $V_{ij} = 0$ implies no connection.
+    
+    $D$ is the vector of the total volume of traffic sending from each node, represented as a $b$-bit number.
     \[
-        D = \mathscr{M}_{b \times n}
+        D = \vec{d} \in \mathbb{R}^{n}
     \]
-    $T^{i}$ transformation from V to W for some timeslot i (cyclical) The full edge
-    basis is trivial: $e_{i,j}$ is the standard unit vector with 1 at the
-    coordinate for edge (i,j) and 0 elsewhere. Those $m=(nC2)$ vectors span $R^{m}$.
-    The round-robin matching vectors are then simply sums of some of those edge
-    unit vector s.
+    
+    $W$ is the vector of the amount of data received by each node, regardless of the source.
     \[
-        T^{i} = \mathscr{M}_{n \times n}
+        W = \vec{w} \in \mathbb{R}^{n} (Received Data)
     \]
+
+    We define $\mathcal{T}$ as the Traffic Demand Matrix (specific volume from each source to each destination).
+    To calculate the traffic successfully delivered in a timeslot, we perform the element-wise summation (Hadamard product) of the Traffic Matrix and the Connectivity Matrix:
     \[
-        T^{i} \rightarrow\mathscr{L}(V,W)
+        \text{Delivered} = \mathcal{T} \circ V
     \]
-    $W$ is the recieving node for each sending node for a specific time slot called
-    an adjacency matrix
-    \[
-        W = \mathscr{M}_{n \times n}\mid W_{A_{i,k},i}= 1, \neg(W_{A_{i,k},i}) =
-        0
-    \]
-    $S$ is the recieved data represented as a matrix with b bits and n nodes
-    \[
-        S = \mathscr{M}_{b \times n}
-    \]
+    The total received data $W$ is then the column-sum of this delivered traffic matrix.
     \begin{enumerate}
         \item Round-Robin 1 Letter 1 Node
             minimum time coefficient: n
@@ -683,8 +675,8 @@
 
     \begin{figure}[ht]
         \centering
-        \includegraphics[width=\textwidth]{plots/traffic_benchmark_capacity.png}
-        \caption{Topology Capacity Benchmark: Shannon Capacity vs Power Budget across different traffic models.}
+        \includegraphics[width=\textwidth]{plots/traffic_benchmark_completion_time.png}
+        \caption{Topology Benchmark: Flow Completion Time vs Power Budget across different traffic models.}
         \label{fig:traffic_benchmark}
     \end{figure}
 

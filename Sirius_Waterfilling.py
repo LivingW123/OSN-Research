@@ -60,30 +60,42 @@ def run_sirius_wf_demo():
     T = 8
     
     # Generate a simple round-robin schedule
-    connectivity = np.zeros((T, N, N))
+    connectivity_rr = np.zeros((T, N, N))
     for t in range(T):
         for u in range(N):
             v = (u + t + 1) % N
-            connectivity[t, u, v] = 1
+            connectivity_rr[t, u, v] = 1
+
+    # Generate a Random Schedule (Non-Round-Robin) for comparison
+    connectivity_random = np.zeros((T, N, N))
+    for t in range(T):
+        # Create a random permutation for each timeslot (ensure 1-to-1 mapping if possible, or just random links)
+        # To be fair to Sirius constraints (1 trans, 1 recv), use random matching/permutation
+        perm = np.random.permutation(N)
+        for u in range(N):
+            connectivity_random[t, u, perm[u]] = 1
             
-    # Case A: Uniform Demand
-    demand_uniform = np.ones((N, N)) * 0.5 # Each pair wants 0.5 units
-    achieved_uniform = sirius_inverse_waterfilling(demand_uniform.copy(), connectivity)
+    # Define Power Budget (Credit Limit for secondary paths)
+    POWER_BUDGET = 0.5 
+            
+    # Case A: Uniform Demand with Round Robin
+    demand_uniform = np.ones((N, N)) * 0.5 
+    achieved_rr = sirius_inverse_waterfilling(demand_uniform.copy(), connectivity_rr, credit_limit=POWER_BUDGET)
     
-    # Case B: Skewed Demand
-    demand_skewed = np.zeros((N, N))
-    demand_skewed[0, 1] = 5.0 # High demand between node 0 and 1
-    achieved_skewed = sirius_inverse_waterfilling(demand_skewed.copy(), connectivity)
-    
-    # Visualization of 'Valleys' being filled
+    # Case A2: Uniform Demand with Random Schedule
+    achieved_random = sirius_inverse_waterfilling(demand_uniform.copy(), connectivity_random, credit_limit=POWER_BUDGET)
+            
+
+    # Visualization of Scheduling Impact
     plt.figure(figsize=(10, 5))
-    plt.bar(['Uniform (Total)', 'Skewed (Flow 0->1)'], 
-             [np.sum(achieved_uniform), achieved_skewed[0, 1]], 
-             color=['blue', 'orange'])
-    plt.ylabel('Achieved Throughput')
-    plt.title('Sirius Inverse Waterfilling Performance')
-    plt.savefig('plots/sirius_inverse_wf.png')
-    print("Saved plots/sirius_inverse_wf.png")
+    plt.bar(['Round Robin', 'Random Schedule'], 
+             [np.sum(achieved_rr), np.sum(achieved_random)], 
+             color=['blue', 'green'])
+    plt.ylabel('Total Achieved Throughput')
+    plt.title(f'Sirius Schedule Comparison (Power Budget={POWER_BUDGET})')
+    plt.savefig('plots/sirius_schedule_comparison.png')
+    print("Saved plots/sirius_schedule_comparison.png")
+
 
 if __name__ == "__main__":
     run_sirius_wf_demo()

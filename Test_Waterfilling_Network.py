@@ -627,14 +627,14 @@ def compare_waterfilling_performance():
             linewidth = 3 if "GA" in name else 1.5
             plt.plot(power_levels, capacities, marker='o', label=name, linewidth=linewidth)
             
-        plt.xlabel("Total Power Budget (P)")
-        plt.ylabel("Shannon Capacity (Weighted Sum Rate)")
+        plt.xlabel("Total Power Budget (Arbitrary Units)")
+        plt.ylabel("Total Flow Completion Time (s)")
         plt.title(f"Performance Comparison on Skewed Traffic (N={num_nodes}, D={target_degree})")
         plt.legend()
         plt.grid(True, linestyle='--', alpha=0.7)
         
-        plt.savefig("plots/final_comparison.png")
-        print("Final comparison plot saved to plots/final_comparison.png")
+        plt.savefig("plots/final_comparison_completion_time.png")
+        print("Final comparison plot saved to plots/final_comparison_completion_time.png")
         plt.show()
         
     except Exception as e:
