@@ -1,9 +1,87 @@
+"""
+===================================================================================
+OPERA CONGESTION SIMULATION
+===================================================================================
+Implements Opera architecture simulation with hybrid circuit-packet model.
+
+Benchmarking Framework Section 2.2: Opera Benchmark Outline
+- Hybrid circuit-packet workload (92% bulk + 8% latency-sensitive)
+- Dynamic rack failures
+- Bandwidth tax: (L - 1) for multi-hop flows
+- Reconfiguration overhead: δ / T_cycle capacity loss
+===================================================================================
+"""
+
 import heapq
 import random
 import collections
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional
+
+
+# =================================================================================
+# SECTION 1: OPERA METRICS (Framework Section 2.2)
+# =================================================================================
+
+@dataclass
+class OperaMetrics:
+    """
+    Opera-specific metrics from Benchmarking Framework Section 2.2.
+    
+    Primary:
+    - throughput: Effective throughput under hybrid waterfilling
+    - avg_latency: Average latency in cycles
+    - fct: Flow Completion Time
+    
+    Secondary:
+    - bandwidth_tax: (L - 1) extra bandwidth cost
+    - circuit_utilization: Fraction of circuit capacity used
+    - duty_cycle_loss: δ / T_slot capacity loss from reconfiguration
+    """
+    throughput: float = 0.0
+    avg_latency: float = 0.0
+    fct: float = 0.0
+    bandwidth_tax: float = 0.0
+    circuit_utilization: float = 0.0
+    duty_cycle_loss: float = 0.0
+
+
+def calculate_opera_bandwidth_tax(hops: int) -> float:
+    """
+    Opera bandwidth tax calculation.
+    Tax = (hops - 1) / hops for multi-hop flows.
+    Bulk (1-hop) flows have 0 tax.
+    """
+    if hops <= 1:
+        return 0.0
+    return (hops - 1) / hops
+
+
+def calculate_opera_duty_cycle_loss(delta: float, t_slot: float) -> float:
+    """
+    Duty cycle loss from reconfiguration.
+    Loss = δ / T_slot (fraction of slot lost to switching).
+    """
+    if t_slot <= 0:
+        return 0.0
+    return delta / t_slot
+
+
+def calculate_opera_theoretical_throughput(alpha: float, delta: float, t_cycle: float, avg_hops: float = 2.0) -> float:
+    """
+    Theoretical throughput for Opera hybrid model.
+    
+    Throughput = (1 - δ/T_cycle) * (α + (1-α)/avg_hops)
+    where α = bulk fraction, δ = reconfig delay
+    """
+    reconfig_efficiency = 1 - (delta / t_cycle) if t_cycle > 0 else 0
+    return reconfig_efficiency * (alpha + (1 - alpha) / avg_hops)
+
+
+
 
 class OperaPacket:
     def __init__(self, src, dst, size, creation_time, is_bulk=False):

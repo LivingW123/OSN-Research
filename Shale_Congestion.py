@@ -300,15 +300,43 @@ def generate_rr_schedule(n):
     return schedules
 
 # --- Analysis Functions ---
+# Implements Benchmarking Framework Section 2.1: Shale Benchmark Outline
 
-def check_bottlenecks(N, h, P, T_F, T, E):
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
+
+@dataclass
+class ShaleMetrics:
     """
-    Returns True if conditions are met.
-    P: Propagation Delay
-    E: Epoch Length
+    Shale-specific metrics from Benchmarking Framework Section 2.1.
+    
+    - throughput: Throughput scaling ≈ 1/(h+1)
+    - avg_hops: L(h) = h + 1
+    - latency: τ(h) = αh + β
+    - saturation_threshold: Load where throughput saturates
+    """
+    throughput: float = 0.0
+    avg_hops: float = 0.0
+    latency: float = 0.0
+    saturation_threshold: float = 0.0
+    stability_score: float = 0.0
+    fct: float = 0.0
+
+def check_bottlenecks(N: int, h: int, P: float, T_F: int, T: int, E: int) -> Tuple[bool, bool, float, float]:
+    """
+    Check Shale bottleneck conditions from Framework Section 2.1.
+    
+    Returns:
+        (cond1, cond2, limit1, limit2) where:
+        - cond1: First-Hop Bottleneck Condition: P ≤ h * T_F * E
+        - cond2: Penultimate Link Bottleneck: P ≤ h * T * (h * N^(1/h) - 1) * E
+        - limit1: Theoretical limit for first-hop
+        - limit2: Theoretical limit for penultimate link
     """
     # 1. First-Hop Bottleneck Condition: P <= h * T_F * E
-    cond1 = P <= h * T_F * E
+    limit1 = h * T_F * E
+    cond1 = P <= limit1
+    
     # 2. Penultimate Link Bottleneck: P <= h * T * (h * N^(1/h) - 1) * E
     try:
         root_n = N ** (1.0/h)
@@ -318,7 +346,60 @@ def check_bottlenecks(N, h, P, T_F, T, E):
     limit2 = h * T * (h * root_n - 1) * E
     cond2 = P <= limit2
     
-    return cond1, cond2, h * T_F * E, limit2
+    return cond1, cond2, limit1, limit2
+
+
+def calculate_shale_theoretical_limit(h: int) -> float:
+    """
+    Theoretical throughput limit for Shale VLB.
+    From Framework: Throughput scaling ≈ 1/(h+1)
+    """
+    return 1.0 / (h + 1)
+
+
+def calculate_shale_latency(h: int, alpha: float = 1.0, beta: float = 0.0) -> float:
+    """
+    Shale latency model: τ(h) = αh + β
+    From Framework Section 2.1.
+    """
+    return alpha * h + beta
+
+
+def collect_shale_metrics(sim: 'ShaleSimulation', 
+                          h: int, 
+                          duration: int,
+                          injected_cells: int) -> ShaleMetrics:
+    """
+    Collect comprehensive Shale metrics after simulation.
+    Implements Section 1.3 metrics for Shale architecture.
+    """
+    delivered = len(sim.delivered_cells)
+    throughput = delivered / duration / sim.num_nodes if duration > 0 else 0
+    
+    # Normalized FCT calculation
+    fcts = []
+    P = 10  # Propagation delay constant
+    for f in sim.completed_flows:
+        t_actual = f.completion_time - f.creation_time
+        norm_fct = t_actual / (f.size + P)
+        fcts.append(norm_fct)
+    
+    avg_fct = np.mean(fcts) if fcts else 0
+    
+    # Stability score: consistency of delivery rate
+    stability = throughput / calculate_shale_theoretical_limit(h) if h > 0 else 0
+    
+    return ShaleMetrics(
+        throughput=throughput,
+        avg_hops=h + 1,  # L(h) = h + 1
+        latency=calculate_shale_latency(h),
+        saturation_threshold=calculate_shale_theoretical_limit(h),
+        stability_score=min(stability, 1.0),
+        fct=avg_fct
+    )
+
+
+
 
 def run_load_sweep():
     import matplotlib.pyplot as plt
