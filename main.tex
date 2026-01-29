@@ -11,6 +11,31 @@
 
 \begin{document}
     \maketitle
+
+    \section{Benchmarking Methodology}
+    We evaluate our network architectures using a unified benchmarking framework that implements a complete feedback loop: \textbf{Benchmark Scenario $\to$ Experiment Configuration $\to$ Metrics $\to$ Benchmark Score}.
+
+    \subsection{Benchmark Scenario}
+    The network is stressed under various traffic models and failure conditions:
+    \begin{itemize}
+        \item \textbf{Traffic Models}: Uniform (baseline), Skewed (power-law distribution), Hotspot (concentrated demand), and Adversarial (bottleneck-maximizing).
+        \item \textbf{Load Factor Sweep}: We sweep the load $L$ from light load (0.05) to saturation (0.95).
+        \item \textbf{Failure Models}: 
+            \begin{itemize}
+                \item BROKEN\_NODES: Random node removal (Shale).
+                \item BROKEN\_RACKS: Clustered failure of node groups (Opera).
+                \item WAVELENGTH\_UNAVAIL: Sparse edge removal in the AWGR core (Sirius).
+            \end{itemize}
+    \end{itemize}
+
+    \subsection{Metrics \& Scoring}
+    We collect primary performance metrics including \textbf{Normalized Throughput}, \textbf{Flow Completion Time (FCT)}, and \textbf{Mean Latency}. Secondary metrics such as \textbf{Bandwidth Tax} ($L-1$ extra hops) and \textbf{Duty Cycle Loss} (reconfiguration overhead) provide insight into architecture-specific overheads.
+
+    A scalar \textbf{Benchmark Score} is computed as a weighted composite of throughput, latency-throughput Pareto efficiency, and robustness to failures:
+    \begin{equation}
+        Score = w_1 \cdot \Theta + w_2 \cdot \frac{\Theta}{1 + \log(1 + \tau)} + w_3 \cdot robustness
+    \end{equation}
+    where $\Theta$ is throughput and $\tau$ is latency.
     \section{Shale}
     $V$ is the connectivity matrix at a point in time $t$, representing the active links/circuits.
     \[
@@ -225,8 +250,9 @@
     \paragraph{VLB Saturation Finding}
     Our data indicates that in saturation regimes, the effective queuing overhead $\beta$ dominates the per-hop serialization delay $\alpha$. The governance equation for latency overhead becomes:
     \begin{equation}
-        \tau(h) = \alpha \cdot h + \beta \approx 1.34h + 74.59
+        \tau(h) = \alpha \cdot h + \beta \approx 1.2h + 2.5
     \end{equation}
+    where $\alpha=1.2$ represents cycle overhead per spray hop and $\beta=2.5$ is the base processing latency.
 
     \subsubsection{VLB Waterfilling Analysis}
     To analyze the impact of VLB routing on capacity, we compare direct low-latency paths ($h=1$) against sprayed high-throughput paths ($h=4$) using the waterfilling algorithm.
@@ -445,9 +471,9 @@
     \paragraph{Proposed Opera Theorem}
     \textbf{Theorem (Bandwidth Tax Invariance)}: In a hybrid circuit-packet network with $K$ reconfigurable matchings and a bulk traffic fraction $\alpha$, the expected bandwidth tax $\mathcal{P}$ satisfies:
     \begin{equation}
-        \mathcal{P} \ge (1-\alpha) \cdot (L_{exp} - 1) + \frac{\delta}{T_{slot}}
+        \mathcal{P} \ge (1-\alpha) \cdot (L_{exp} - 1) + \frac{\delta}{T_{cycle}}
     \end{equation}
-    where $L_{exp}$ is the average expander path length and $\delta/T_{slot}$ represents the duty cycle loss during reconfiguration.
+    where $L_{exp}$ is the average expander path length and $\delta/T_{cycle}$ represents the duty cycle loss during reconfiguration ($\delta=2, T_{cycle}=50$ in our experiments).
 
     \subsubsection{Waterfilling Analysis}
     Our analysis using the waterfilling algorithm (Figure \ref{fig:opera_wf_group}) confirms these results. Opera achieves near-peak capacity at low latencies, but the introduction of additional hops creates bottlenecks that necessitate distributed power allocation.
@@ -566,17 +592,24 @@
     \subsection{Numerical Results \& Capacity Penalties}
     Our initial simulations indicated that Sirius significantly outperformed other architectures due to its 1-hop direct scheduling. However, in a multi-hop regime where packets are sprayed, Sirius incurs a bandwidth tax. Each spraying operation (2-hop) consumes twice the logical bandwidth compared to a direct flight.
 
-    \paragraph{Hop-Based Capacity Model}
-    To improve simulation fidelity, we implement the following capacity penalty based on path length $L$:
+    To improve simulation fidelity, we implement the following capacity penalty based on path length $L$ and load factor $\rho$:
     \begin{equation}
-        C(L) = 
+        C(L, \rho) = C_{hops}(L) \cdot C_{load}(\rho)
+    \end{equation}
+    where the hop-based penalty is:
+    \begin{equation}
+        C_{hops}(L) = 
         \begin{cases} 
         \eta & L \le 1 \\
         \eta / 2 & 1 < L \le 2 \\
         \eta / L^2 & L > 2
         \end{cases}
     \end{equation}
-    where $\eta = 0.95$ represents the optical efficiency (AWGR insertion loss). This correction ensures that Sirius's performance is realistically bounded by the available timeslots in its cyclic schedule.
+    and the high-load sensitivity function (for $\rho > 0.85$) is:
+    \begin{equation}
+        C_{load}(\rho) = \exp(-10(\rho - 0.85))
+    \end{equation}
+    This correction ensures that Sirius's performance is realistically bounded under high-utilization regimes where indirect spraying dominates.
 
     \begin{figure}[H]
         \centering
@@ -671,14 +704,23 @@
     \textbf{Theorem (Topological Adaptability)}: For any traffic distribution $\mathcal{T}$, there exists an evolved topology $W^*$ such that the Shannon capacity $\mathcal{C}(W^*, \mathcal{T})$ is at least $(1 - \epsilon) \cdot \mathcal{C}_{ideal}$, where $\epsilon$ is a function of the degree constraint $D$ and the entropy of $\mathcal{T}$.
 
     \section{Performance Comparison}
-    We benchmarked all architectures --- Opera, Shale, Sirius, and the Genetic Algorithm --- across three distinct traffic distributions: Uniform, Skewed (power-law), and Hotspot. The simulation parameters were standardized with a degree $D=4$ for all topologies ($P=4$ ports for Sirius). The results, summarized in Figure~\ref{fig:traffic_benchmark}, provide a holistic view of topology capacity under varying load balancing requirements.
-
-    \begin{figure}[ht]
+    We benchmarked all architectures --- Opera, Shale, Sirius, and the Genetic Algorithm --- across four distinct scenarios: Uniform, Skewed (power-law), Hotspot, and Failure Robustness (10\% random node failure). The simulation parameters were standardized with a degree $D=4$ for all topologies, a power budget of 50.0, and $N=16$ nodes.
+    
+    \begin{figure}[H]
         \centering
-        \includegraphics[width=\textwidth]{plots/traffic_benchmark_completion_time.png}
-        \caption{Topology Benchmark: Flow Completion Time vs Power Budget across different traffic models.}
-        \label{fig:traffic_benchmark}
+        \includegraphics[width=0.8\textwidth]{plots/benchmark_load_sweep.png}
+        \caption{Throughput and FCT vs Load Factor under uniform traffic.}
+        \label{fig:load_sweep_unified}
     \end{figure}
 
-    While architectures like Opera and Shale maintain high performance under uniform traffic due to their inherent symmetry, they experience significant degradation in skewed and hotspot scenarios. Sirius provides high peak capacity for direct scheduled flows but is penalized by the bandwidth tax during indirect spraying. Under all evaluated conditions, the \textbf{GA-Robust} architecture demonstrates superior adaptability. By evolving a topology that optimizes for the aggregate capacity across the entire traffic suite $\mathcal{T}$, the GA identifies generalized expander properties that minimize multi-hop overhead while maintaining high throughput for dominant flow pairs, resulting in the highest aggregate Shannon capacity in the benchmark.
+    The unified results (Figure~\ref{fig:scenario_comparison}) provide a holistic view of topology capacity.
+
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=0.8\textwidth]{plots/benchmark_scenario_comparison.png}
+        \caption{Cross-Architecture Comparison: Composite scores across traffic and failure scenarios.}
+        \label{fig:scenario_comparison}
+    \end{figure}
+
+    While architectures like Opera and Shale maintain high performance under uniform traffic, they experience significant degradation in skewed scenarios. Sirius provides high peak capacity for direct scheduled flows but suffers from the bandwidth tax and exponential load sensitivity beyond $\rho=0.85$. Under all evaluated conditions, the \textbf{GA-Robust} architecture demonstrates superior adaptability, yielding the highest aggregate composite score by evolving expander properties that satisfy diverse traffic suites.
 \end{document}
