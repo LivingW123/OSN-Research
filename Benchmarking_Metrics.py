@@ -908,8 +908,16 @@ if __name__ == "__main__":
     shale_adj = RR2(4, 2)
     
     # Sirius: AWGR-based
-    As, Ws, P = generate_full_system(4, 4, N)
-    sirius_adj = [[(v - 1) % N for v in row] for row in As[0]]
+    # Use Union of all cyclic permutations to represent effective topology
+    As_sir, Ws_sir, P_sir = generate_full_system(4, 4, N)
+    sirius_union_adj = [set() for _ in range(N)]
+    for A in As_sir:
+        for r, row in enumerate(A):
+            for v in row:
+                neighbor = (v - 1) % N
+                if neighbor != r:
+                    sirius_union_adj[r].add(neighbor)
+    sirius_adj = [list(x) for x in sirius_union_adj]
     
     architectures = {
         "Opera": opera_adj,
