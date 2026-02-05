@@ -28,14 +28,63 @@
             \end{itemize}
     \end{itemize}
 
-    \subsection{Metrics \& Scoring}
-    We collect primary performance metrics including \textbf{Normalized Throughput}, \textbf{Flow Completion Time (FCT)}, and \textbf{Mean Latency}. Secondary metrics such as \textbf{Bandwidth Tax} ($L-1$ extra hops) and \textbf{Duty Cycle Loss} (reconfiguration overhead) provide insight into architecture-specific overheads.
+    \subsection{Performance Metrics Definition}
+    We rigorously define the performance metrics used to evaluate each architecture.
 
-    A scalar \textbf{Benchmark Score} is computed as a weighted composite of throughput, latency-throughput Pareto efficiency, and robustness to failures:
+    \subsubsection{Normalized Throughput ($\mathcal{T}_{norm}$)}
+    The normalized throughput is the ratio of delivered capacity to the total demand, scaled by the line rate.
     \begin{equation}
-        Score = w_1 \cdot \Theta + w_2 \cdot \frac{\Theta}{1 + \log(1 + \tau)} + w_3 \cdot robustness
+        \mathcal{T}_{norm} = \frac{1}{R \cdot N} \sum_{i,j} \Theta_{i,j}
     \end{equation}
-    where $\Theta$ is throughput and $\tau$ is latency.
+    where $R$ is the line rate, $N$ is the number of nodes, and $\Theta_{i,j}$ is the effective flow rate allocated between node $i$ and $j$.
+    \begin{itemize}
+        \item \textbf{Shale:} Scales as $\Theta_{Shale} \propto (h+1)^{-1}$ due to VLB spraying overhead.
+        \item \textbf{Opera:} $\Theta_{Opera}$ depends on the hybrid split $\alpha$ and reconfiguration efficiency $\eta_{reconfig} = 1 - \delta/T_{cycle}$.
+        \item \textbf{Sirius:} $\Theta_{Sirius}$ is limited by the scheduling efficiency $\eta_{slot} = (T_{slot} - \delta)/T_{slot}$ and bandwidth tax for indirect paths.
+    \end{itemize}
+
+    \subsubsection{Flow Completion Time ($FCT_{norm}$)}
+    The normalized Flow Completion Time (FCT) measures the time to complete a unit flow relative to the ideal transmission time.
+    \begin{equation}
+        FCT_{norm} = \frac{1}{|\mathcal{F}|} \sum_{f \in \mathcal{F}} \frac{t_{end}(f) - t_{start}(f)}{S_f / R}
+    \end{equation}
+    where $\mathcal{F}$ is the set of flows, $t$ represents timestamps, and $S_f$ is the flow size.
+
+    \subsubsection{Mean Latency ($\bar{\tau}$)}
+    Mean latency captures the average packet delay, including serialization, propagation, and queuing/reconfiguration delays.
+    \begin{equation}
+        \bar{\tau} = \frac{1}{N_{pkts}} \sum_{p} (T_{prop} + T_{queue} + T_{reconfig})
+    \end{equation}
+    \begin{itemize}
+        \item \textbf{Shale:} $\tau(h) \approx \alpha \cdot h + \beta$, scaling linearly with spray depth $h$.
+        \item \textbf{Opera:} For multi-hop traffic, $\tau \approx L_{avg} \cdot T_{cycle}$.
+        \item \textbf{Sirius:} $\tau \approx L_{avg} \cdot T_{slot}$.
+    \end{itemize}
+
+    \subsubsection{Bandwidth Tax ($\mathcal{B}_{tax}$)}
+    Bandwidth tax quantifies the capacity lost to multi-hop routing constraints.
+    \begin{equation}
+        \mathcal{B}_{tax} = \frac{\text{Total Capacity Used} - \text{Effective Capacity}}{\text{Total Capacity Used}} = 1 - \frac{1}{\bar{h}}
+    \end{equation}
+    where $\bar{h}$ is the average hop count.
+    \begin{itemize}
+        \item \textbf{Shale:} $\mathcal{B}_{tax} \approx h/(h+1)$.
+        \item \textbf{Opera/Sirius (Indirect):} $\mathcal{B}_{tax} = 1/2$ for 2-hop spraying.
+    \end{itemize}
+
+    \subsubsection{Duty Cycle Loss ($\mathcal{D}_{loss}$)}
+    Duty cycle loss represents the fraction of time the network is unavailable due to reconfiguration.
+    \begin{equation}
+        \mathcal{D}_{loss} = \frac{\delta}{T_{period}}
+    \end{equation}
+    where $\delta$ is the reconfiguration/locking time and $T_{period}$ is the cycle or slot duration ($T_{cycle}$ for Opera, $T_{slot}$ for Sirius). For Shale, $\mathcal{D}_{loss} \approx 0$.
+
+    \subsubsection{Benchmark Score ($S_{bench}$)}
+    The composite benchmark score aggregates performance across dimensions to allow single-value comparison.
+    \begin{equation}
+        S_{bench} = w_1 \mathcal{T}_{norm} + w_2 \frac{\mathcal{T}_{norm}}{1 + \ln(1+\bar{\tau})} + w_3 (1 - \mathcal{U}_{bottleneck}) + w_4 (1 - \mathcal{F}_{rate})
+    \end{equation}
+    where weights $w_1=0.4$ (Throughput), $w_2=0.3$ (Latency-Efficiency), $w_3=0.2$ (Robustness/Utilization), and $w_4=0.1$ (Degradation under failure).
     \section{Shale}
     $V$ is the connectivity matrix at a point in time $t$, representing the active links/circuits.
     \[
@@ -246,6 +295,23 @@
 
     \paragraph{Proposed VLB Theorem}
     \textbf{Theorem (Linear Path Scaling)}: In a deterministic VLB routing scheme, the topological path length $L$ scales strictly linearly with the spray parameter $h$, such that $L(h) = h + 1$, regardless of network size $N$, provided $N > h$.
+
+    \begin{table}[H]
+        \centering
+        \caption{Shale Benchmark Efficiency Summary}
+        \begin{tabular}{|l|c|l|}
+            \hline
+            \textbf{Metric} & \textbf{Value} & \textbf{Notes} \\
+            \hline
+            Spray Depth ($h$) & 2 & Standard VLB \\
+            Path Length & 3.0 & $h+1$ \\
+            Theoretical Capacity & 0.33 & $1/(h+1)$ \\
+            Latency Overhead & 100\% & 2x buffering \\
+            \textbf{Composite Score} & \textbf{0.4103} & Uniform Traffic Scenario \\
+            \hline
+        \end{tabular}
+        \label{tab:shale_efficiency}
+    \end{table}
 
     \paragraph{VLB Saturation Finding}
     Our data indicates that in saturation regimes, the effective queuing overhead $\beta$ dominates the per-hop serialization delay $\alpha$. The governance equation for latency overhead becomes:
@@ -471,9 +537,26 @@
     \paragraph{Proposed Opera Theorem}
     \textbf{Theorem (Bandwidth Tax Invariance)}: In a hybrid circuit-packet network with $K$ reconfigurable matchings and a bulk traffic fraction $\alpha$, the expected bandwidth tax $\mathcal{P}$ satisfies:
     \begin{equation}
-        \mathcal{P} \ge (1-\alpha) \cdot (L_{exp} - 1) + \frac{\delta}{T_{cycle}}
+        \mathcal{P} \ge (1-\alpha) \cdot (L_{exp} - 1) + \frac{\delta}{T_{slot}}
     \end{equation}
-    where $L_{exp}$ is the average expander path length and $\delta/T_{cycle}$ represents the duty cycle loss during reconfiguration ($\delta=2, T_{cycle}=50$ in our experiments).
+    where $L_{exp}$ is the average expander path length and $\delta/T_{slot}$ represents the duty cycle loss during reconfiguration ($\delta=2, T_{slot}=20$ in our experiments).
+
+    \begin{table}[H]
+        \centering
+        \caption{Opera Benchmark Efficiency Summary}
+        \begin{tabular}{|l|c|l|}
+            \hline
+            \textbf{Metric} & \textbf{Value} & \textbf{Notes} \\
+            \hline
+            Bulk Traffic Fraction ($\alpha$) & 0.92 & Direct circuit paths \\
+            Duty Cycle Loss & 10.0\% & $\delta=2, T_{slot}=20$ \\
+            Effective Throughput (Bulk) & 0.828 & $0.92 \times (1 - 0.1)$ \\
+            Effective Throughput (Expander) & 0.033 & $0.08 \times (1 - 0.1) / L_{avg}$ \\
+            \textbf{Composite Score} & \textbf{0.6062} & Uniform Traffic Scenario \\
+            \hline
+        \end{tabular}
+        \label{tab:opera_efficiency}
+    \end{table}
 
     \subsubsection{Waterfilling Analysis}
     Our analysis using the waterfilling algorithm (Figure \ref{fig:opera_wf_group}) confirms these results. Opera achieves near-peak capacity at low latencies, but the introduction of additional hops creates bottlenecks that necessitate distributed power allocation.
@@ -631,6 +714,23 @@
 
     Our simulation (Figure \ref{fig:sirius_efficiency}) indicates that Sirius maintains high utilization up to a load of 0.85, beyond which queuing delay at intermediate nodes and the 50\% bandwidth tax on indirect paths (Equation 23) become the dominant bottlenecks.
 
+    \begin{table}[H]
+        \centering
+        \caption{Sirius Benchmark Efficiency Summary}
+        \begin{tabular}{|l|c|l|}
+            \hline
+            \textbf{Metric} & \textbf{Value} & \textbf{Notes} \\
+            \hline
+            Timeslot Efficiency ($\eta$) & 96.0\% & $T_{slot}=100, \delta=4$ \\
+            Direct Path Capacity & 1.0 $\eta$ & 1-hop (Ideal) \\
+            Sprayed Path Capacity & 0.5 $\eta$ & 2-hop (Bandwidth Tax) \\
+            Saturation Load & 0.85 & Queue divergence point \\
+            \textbf{Composite Score} & \textbf{4.4109} & Uniform Traffic Scenario \\
+            \hline
+        \end{tabular}
+        \label{tab:sirius_efficiency}
+    \end{table}
+
     \paragraph{Proposed Sirius Theorem}
     \textbf{Theorem (Throughput Duality in Cyclic Networks)}: For a time-slotted hybrid network with a fixed schedule $\mathcal{S}$, the maximum achievable throughput $\Theta$ under a dual-hop spraying regime is bounded by:
     \begin{equation}
@@ -721,6 +821,21 @@
         \caption{Cross-Architecture Comparison: Composite scores across traffic and failure scenarios.}
         \label{fig:scenario_comparison}
     \end{figure}
+
+    \begin{table}[H]
+        \centering
+        \caption{Cross-Architecture Benchmark Scores}
+        \begin{tabular}{|l|c|c|c|c|}
+            \hline
+            \textbf{Architecture} & \textbf{Uniform} & \textbf{Skewed} & \textbf{Hotspot} & \textbf{Failures} \\
+            \hline
+            Opera & 0.6062 & 0.5781 & 0.6148 & 1.3576 \\
+            Shale & 0.4103 & 0.4802 & 0.4103 & 0.7712 \\
+            Sirius & 4.4109 & 1.5995 & 4.4109 & 4.1008 \\
+            \hline
+        \end{tabular}
+        \label{tab:final_comparison}
+    \end{table}
 
     While architectures like Opera and Shale maintain high performance under uniform traffic, they experience significant degradation in skewed scenarios. Sirius provides high peak capacity for direct scheduled flows but suffers from the bandwidth tax and exponential load sensitivity beyond $\rho=0.85$. Under all evaluated conditions, the \textbf{GA-Robust} architecture demonstrates superior adaptability, yielding the highest aggregate composite score by evolving expander properties that satisfy diverse traffic suites.
 \end{document}

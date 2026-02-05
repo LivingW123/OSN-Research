@@ -222,7 +222,7 @@ def run_opera_efficiency_test():
     
     print("--- Running Opera Efficiency Simulation (BFS Routing) ---")
     for L in loads:
-        sim = OperaSimulation(N, K, reconfiguration_delay=1, slot_duration=50) # 1/50 = 2% overhead
+        sim = OperaSimulation(N, K, reconfiguration_delay=2, slot_duration=20) # 2/20 = 10% overhead
         duration = 500
         
         for t in range(duration):

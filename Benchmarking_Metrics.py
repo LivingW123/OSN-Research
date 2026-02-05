@@ -957,9 +957,14 @@ if __name__ == "__main__":
     print(f"{'Architecture':<15} | {'Scenario':<15} | {'Throughput':<10} | {'Score':<10}")
     print("-" * 60)
     
-    for sc_name, sc_scores in all_scores.items():
-        for arch, score in sc_scores.items():
-            print(f"{arch:<15} | {sc_name:<15} | {score.aggregate_throughput:10.4f} | {score.composite_score():10.4f}")
+    with open('score_report.txt', 'w') as f:
+        f.write(f"{'Architecture':<15} | {'Scenario':<15} | {'Throughput':<10} | {'Score':<10}\n")
+        f.write("-" * 60 + "\n")
+        for sc_name, sc_scores in all_scores.items():
+            for arch, score in sc_scores.items():
+                line = f"{arch:<15} | {sc_name:<15} | {score.aggregate_throughput:10.4f} | {score.composite_score():10.4f}"
+                print(line)
+                f.write(line + "\n")
     
     # Generate unified plots
     if not os.path.exists('plots'):

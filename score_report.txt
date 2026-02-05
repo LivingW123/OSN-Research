@@ -1,0 +1,14 @@
+Architecture    | Scenario        | Throughput | Score     
+------------------------------------------------------------
+Opera           | Uniform         |     0.6271 |     0.6062
+Shale           | Uniform         |     0.2170 |     0.4103
+Sirius          | Uniform         |     9.0662 |     4.4109
+Opera           | Skewed          |     0.5695 |     0.5781
+Shale           | Skewed          |     0.3547 |     0.4802
+Sirius          | Skewed          |     2.8660 |     1.5995
+Opera           | Hotspot         |     0.6447 |     0.6148
+Shale           | Hotspot         |     0.2170 |     0.4103
+Sirius          | Hotspot         |     9.0662 |     4.4109
+Opera           | Failures (10%)  |     2.1865 |     1.3576
+Shale           | Failures (10%)  |     0.9471 |     0.7712
+Sirius          | Failures (10%)  |     8.4044 |     4.1008
