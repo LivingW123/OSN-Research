@@ -753,6 +753,21 @@ class NetworkBenchmark:
             elif architecture == "sirius":
                 fct, metrics = calculate_sirius_capacity(
                     test_adj, traffic, self.config.sirius, self.config.total_power_budget)
+            elif architecture == "genetic":
+                # Genetic uses generic capacity model from Traffic_Benchmarks
+                from Traffic_Benchmarks import calculate_topology_capacity
+                fct_val, prim, sec = calculate_topology_capacity(
+                    test_adj, traffic, total_power=self.config.total_power_budget,
+                    architecture_type=None, return_metrics=True
+                )
+                # Map Traffic_Benchmarks metrics to Benchmarking_Metrics format
+                metrics = PrimaryMetrics(
+                    throughput_normalized=prim.throughput,
+                    flow_completion_time=prim.fct,
+                    average_hop_count=prim.avg_hops,
+                    latency_mean=prim.latency_mean
+                )
+                fct = fct_val
             else:
                 continue
             
@@ -905,6 +920,21 @@ if __name__ == "__main__":
     # Create benchmark
     benchmark = NetworkBenchmark(config)
     
+    # Generate Genetic Topology (Robust)
+    print("\n[1.5] Evolution of Genetic Topology...")
+    from AI_Topology import evolve_topology
+    # Use robust evolution to generalize across traffic patterns
+    try:
+        genetic_adj = evolve_topology(N, D, generations=30, traffic_type="robust")
+    except ImportError:
+        print("PyGAD not found. Skipping Genetic Evolution.")
+        genetic_adj = opera_adj # Fallback
+    except Exception as e:
+        print(f"Genetic Evolution failed: {e}. Using fallback.")
+        genetic_adj = opera_adj
+
+    architectures["Genetic"] = genetic_adj
+
     # Scenario 1: Uniform Traffic (Baseline)
     scenario_uniform = BenchmarkScenario(
         traffic_model=TrafficModel.UNIFORM,
@@ -944,11 +974,14 @@ if __name__ == "__main__":
     }
     
     all_scores = {}
-    
+    scenario_load_sweeps = {}  # Store load sweep data for plotting per scenario
+
     for name, sc in scenarios.items():
         print(f"    Evaluating: {name}...")
         scores = benchmark.compare_architectures(architectures, sc, scenario_name=name)
         all_scores[name] = scores
+        # Deep copy results for plotting later
+        scenario_load_sweeps[name] = {arch: dict(res) for arch, res in benchmark.results.items()}
     
     # Print unified report
     print("\n" + "=" * 60)
@@ -970,43 +1003,54 @@ if __name__ == "__main__":
     if not os.path.exists('plots'):
         os.makedirs('plots')
     
-    # 1. Load sweep comparison (from last scenario)
-    plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1)
-    for arch_name in architectures:
-        results = benchmark.results.get(arch_name.lower(), {})
-        if 'loads' in results:
-            plt.plot(results['loads'], results['throughput'], 'o-', label=arch_name)
-    plt.xlabel('Load Factor')
-    plt.ylabel('Normalized Throughput')
-    plt.title(f'Throughput vs Load ({list(scenarios.keys())[-1]})')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    
-    plt.subplot(1, 2, 2)
-    for arch_name in architectures:
-        results = benchmark.results.get(arch_name.lower(), {})
-        if 'loads' in results:
-            plt.plot(results['loads'], results['fct'], 's-', label=arch_name)
-    plt.xlabel('Load Factor')
-    plt.ylabel('Flow Completion Time')
-    plt.title(f'FCT vs Load ({list(scenarios.keys())[-1]})')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig('plots/benchmark_load_sweep.png')
-    
+    # 1. Load sweep comparison (For EACH scenario)
+    for sc_name, arch_results in scenario_load_sweeps.items():
+        # Only plot load sweeps for Traffic Models, skipping Failure for now if not needed, 
+        # but user asked for "comparison for all the compared types of traffic"
+        if "Failures" in sc_name: continue
+
+        safe_name = sc_name.lower().replace(" ", "_")
+        plt.figure(figsize=(12, 5))
+        
+        plt.subplot(1, 2, 1)
+        for arch_name, results in arch_results.items():
+            if 'loads' in results:
+                plt.plot(results['loads'], results['throughput'], 'o-', label=arch_name)
+        plt.xlabel('Load Factor')
+        plt.ylabel('Normalized Throughput')
+        plt.title(f'Throughput vs Load ({sc_name})')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        plt.subplot(1, 2, 2)
+        for arch_name, results in arch_results.items():
+            if 'loads' in results:
+                # Use log scale for FCT and skip clipping to show true saturation behavior
+                # Replace 1e6 penalty with NaN for plotting clarity if desired, or keep as high value
+                # Here we plot raw values but use log scale
+                plt.plot(results['loads'], results['fct'], 's-', label=arch_name)
+        plt.xlabel('Load Factor')
+        plt.ylabel('Flow Completion Time (Log Scale)')
+        plt.yscale('log')
+        plt.title(f'FCT vs Load ({sc_name})')
+        plt.legend()
+        plt.grid(True, alpha=0.3, which="both")
+        
+        plt.tight_layout()
+        plt.savefig(f'plots/benchmark_load_sweep_{safe_name}.png')
+        print(f"    Saved: plots/benchmark_load_sweep_{safe_name}.png")
+
     # 2. Scenario Comparison Radar/Bar Chart
     plt.figure(figsize=(10, 6))
     arch_names = list(architectures.keys())
     scenario_names = list(scenarios.keys())
     
     x = np.arange(len(scenario_names))
-    width = 0.25
+    width = 0.20 # Thinner bars for 4 architectures
     
     for i, arch in enumerate(arch_names):
         arch_scores = [all_scores[sn][arch].composite_score() for sn in scenario_names]
-        plt.bar(x + (i - 1) * width, arch_scores, width, label=arch)
+        plt.bar(x + (i - 1.5) * width, arch_scores, width, label=arch)
         
     plt.ylabel('Composite Benchmark Score')
     plt.title('Architecture Comparison Across Scenarios')
@@ -1015,7 +1059,6 @@ if __name__ == "__main__":
     plt.grid(axis='y', linestyle='--', alpha=0.7)
     plt.savefig('plots/benchmark_scenario_comparison.png')
     
-    print("\n[3] Saved: plots/benchmark_load_sweep.png")
     print("    Saved: plots/benchmark_scenario_comparison.png")
     
     # Shale h-sweep
