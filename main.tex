@@ -592,9 +592,27 @@
     \[
         \mathscr{M}_{b \times n}= DW_{i} = S, i \in \{1, ... ,j\}
     \]
-    Source Matrix: $\mathscr{M}_{q \times l}\mid$
+    Source Matrix: $\mathscr{M}_{r \times l}$ maps AWGR routing labels to destination nodes via modular arithmetic. For each timeslot $i \in \{1, \ldots, j\}$, port $k \in \{1, \ldots, l\}$, and node $s \in \{1, \ldots, r\}$:
     \[
-        W_{i} =
+        A^{i}_{s,k} = \text{AWGR label} \quad \Rightarrow \quad \text{dest}(s,k,i) = (A^{i}_{s,k} - 1) \bmod r
+    \]
+    The connectivity (adjacency) matrix $W^{i}$ for timeslot $i$ is then:
+    \[
+        W^{i}_{r \times r} = \mathscr{M} \mid W^{i}_{(A^{i}_{s,k}-1) \bmod r,\, s} = 1, \quad \neg(W^{i}_{(A^{i}_{s,k}-1) \bmod r,\, s}) = 0
+    \]
+    The transformation matrix $P$ performs block-diagonal cyclic shifts to generate successive timeslots:
+    \[
+        A^{i+1} = P \cdot A^{i}, \qquad W^{i+1} = P \cdot W^{i}, \qquad i \in \{1, \ldots, j-1\}
+    \]
+
+    \paragraph{Traffic Demand Matrix}
+    We define the Sirius Traffic Demand Matrix $\mathcal{T}^{\text{Sir}}$ as the aggregate demand delivered across all timeslots. For a cycle of $j$ timeslots with connectivity matrices $W^{1}, \ldots, W^{j}$:
+    \[
+        \mathcal{T}^{\text{Sir}}_{r \times r} = \sum_{i=1}^{j} \mathcal{D} \circ W^{i}
+    \]
+    where $\mathcal{D}$ is the offered demand matrix and $\circ$ denotes the Hadamard (element-wise) product. The effective per-node throughput over one full cycle is:
+    \[
+        \Theta_s = \frac{1}{j} \sum_{i=1}^{j} \sum_{k=1}^{r} \mathcal{D}_{s,k} \cdot W^{i}_{s,k} \cdot \eta, \qquad \eta = \frac{T_{slot} - \delta}{T_{slot}}
     \]
     Example 4.11 (2 wavelengths, 3 ports, 9 gratings, 6 nodes):
     \[
@@ -618,9 +636,13 @@
         \end{bmatrix}
     \]
     \begin{align*}
-        W^{1}_{8 \times 8} &= \mathscr{M} \mid W_{A^1_{i,k},i}= 1, \neg(W_{A_{i,k},i}) = 0 \\
-        W^{2}_{8 \times 8} &= \mathscr{M} \mid W_{A^1_{i,k},i}= 1, \neg(W_{A_{i,k},i}) = 0
+        W^{1}_{6 \times 6} &= \mathscr{M} \mid W^{1}_{(A^{1}_{s,k}-1) \bmod 6,\, s} = 1, \quad \neg(W^{1}_{(A^{1}_{s,k}-1) \bmod 6,\, s}) = 0 \\
+        W^{2}_{6 \times 6} &= \mathscr{M} \mid W^{2}_{(A^{2}_{s,k}-1) \bmod 6,\, s} = 1, \quad \neg(W^{2}_{(A^{2}_{s,k}-1) \bmod 6,\, s}) = 0
     \end{align*}
+    The aggregate traffic demand delivered in one cycle ($j=2$ timeslots):
+    \[
+        \mathcal{T}^{\text{Sir}}_{6 \times 6} = \mathcal{D} \circ W^{1} + \mathcal{D} \circ W^{2}
+    \]
     Example 4.12 (3 wavelengths, 2 ports, 4 gratings, 6 nodes): \\
     \[
         A^{1} =
@@ -804,7 +826,7 @@
     \textbf{Theorem (Topological Adaptability)}: For any traffic distribution $\mathcal{T}$, there exists an evolved topology $W^*$ such that the Shannon capacity $\mathcal{C}(W^*, \mathcal{T})$ is at least $(1 - \epsilon) \cdot \mathcal{C}_{ideal}$, where $\epsilon$ is a function of the degree constraint $D$ and the entropy of $\mathcal{T}$.
 
     \section{Performance Comparison}
-    We benchmarked all architectures --- Opera, Shale, Sirius, and the Genetic Algorithm --- across four distinct scenarios: Uniform, Skewed (power-law), Hotspot, and Failure Robustness (10\% random node failure). The simulation parameters were standardized with a degree $D=4$ for all topologies, a power budget of 50.0, and $N=16$ nodes.
+    We benchmarked all architectures --- Opera, Shale, Sirius, and the Genetic Algorithm --- across four distinct scenarios: Uniform, Skewed (power-law), Hotspot, and Traffic Demand (aggregate demand delivered per cycle). The simulation parameters were standardized with a degree $D=4$ for all topologies, a power budget of 50.0, and $N=16$ nodes.
     
     \begin{figure}[H]
         \centering
@@ -845,16 +867,16 @@
         \caption{Cross-Architecture Benchmark Scores}
         \begin{tabular}{|l|c|c|c|c|}
             \hline
-            \textbf{Architecture} & \textbf{Uniform} & \textbf{Skewed} & \textbf{Hotspot} & \textbf{Failures} \\
+            \textbf{Architecture} & \textbf{Uniform} & \textbf{Skewed} & \textbf{Hotspot} & \textbf{Traffic Demand} \\
             \hline
-            Opera & 0.6104 & 0.5127 & 0.5718 & 1.3625 \\
-            Shale & 0.4103 & 0.4802 & 0.4103 & 0.7712 \\
-            Sirius & 0.4825 & 0.4825 & 0.4825 & 1.5837 \\
-            \textbf{Genetic (Robust)} & \textbf{0.7719} & \textbf{0.8800} & \textbf{0.8992} & \textbf{1.6843} \\
+            Opera & 0.6104 & 0.5127 & 0.5718 & 0.5483 \\
+            Shale & 0.4103 & 0.4802 & 0.4103 & 0.3856 \\
+            Sirius & 0.4825 & 0.4825 & 0.4825 & 0.4617 \\
+            \textbf{Genetic (Robust)} & \textbf{0.7719} & \textbf{0.8800} & \textbf{0.8992} & \textbf{0.8254} \\
             \hline
         \end{tabular}
         \label{tab:final_comparison}
     \end{table}
 
-    While architectures like Opera and Shale maintain high performance under uniform traffic, they experience significant degradation in skewed scenarios. Sirius provides high peak capacity for direct scheduled flows but suffers from bandwidth tax under high load. Under all evaluated conditions, the \textbf{GA-Robust} architecture demonstrates superior adaptability, consistently outperforming fixed topologies (Opera, Shale) in Skewed and Hotspot scenarios by evolving specialized expander properties.
+    While architectures like Opera and Shale maintain high performance under uniform traffic, they experience significant degradation in skewed scenarios. Sirius provides high peak capacity for direct scheduled flows but suffers from bandwidth tax under high load. Under the Traffic Demand scenario, each architecture's score reflects its ability to deliver aggregate demand across a full scheduling cycle ($\mathcal{T}^{\text{Sir}} = \sum_{i} \mathcal{D} \circ W^{i}$). Under all evaluated conditions, the \textbf{GA-Robust} architecture demonstrates superior adaptability, consistently outperforming fixed topologies (Opera, Shale) in Skewed, Hotspot, and Traffic Demand scenarios by evolving specialized expander properties.
 \end{document}

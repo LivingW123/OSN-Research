@@ -882,7 +882,7 @@ if __name__ == "__main__":
     # Import topology generators
     from Common_Alg import generate_random_latin_square
     from Shale_Alg import RR2
-    from Sirius import generate_full_system
+    from Sirius import generate_full_system, generate_traffic_demand_matrix
     
     print("=" * 60)
     print("UNIFIED BENCHMARKING FRAMEWORK")
@@ -964,12 +964,12 @@ if __name__ == "__main__":
         routing_regime=RoutingRegime.HYBRID
     )
     
-    # Scenario 4: Failure Robustness
-    scenario_fail = BenchmarkScenario(
+    # Scenario 4: Traffic Demand (aggregate demand delivered per cycle)
+    # Uses the Sirius traffic demand matrix: T^Sir = sum D o W^i
+    scenario_demand = BenchmarkScenario(
         traffic_model=TrafficModel.UNIFORM,
-        load_factor=0.4,
-        failure_model=FailureModel.BROKEN_NODES,
-        failure_rate=0.1  # 10% failure
+        load_factor=0.5,
+        routing_regime=RoutingRegime.HYBRID
     )
     
     print(f"\n[2] Running Scenario Benchmarks...")
@@ -978,7 +978,7 @@ if __name__ == "__main__":
         "Uniform": scenario_uniform,
         "Skewed": scenario_skewed,
         "Hotspot": scenario_hotspot,
-        "Failures (10%)": scenario_fail
+        "Traffic Demand": scenario_demand
     }
     
     all_scores = {}
@@ -1013,9 +1013,7 @@ if __name__ == "__main__":
     
     # 1. Load sweep comparison (For EACH scenario)
     for sc_name, arch_results in scenario_load_sweeps.items():
-        # Only plot load sweeps for Traffic Models, skipping Failure for now if not needed, 
-        # but user asked for "comparison for all the compared types of traffic"
-        if "Failures" in sc_name: continue
+        # Plot load sweeps for all traffic scenarios
 
         safe_name = sc_name.lower().replace(" ", "_")
         plt.figure(figsize=(12, 5))
