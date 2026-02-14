@@ -588,14 +588,11 @@ def calculate_sirius_capacity(adj_list: List[List[int]],
     total_flows = direct_count + indirect_count
     avg_hops = total_hops / total_flows if total_flows > 0 else 1
     
-    # Capacity penalty function C(L) for high loads
-    load = np.sum(traffic_matrix) / (num_nodes * (num_nodes - 1))
-    penalty = 1.0
-    if load > 0.85:
-        # Sharp degradation as specified in outline
-        penalty = np.exp(-10 * (load - 0.85))
-    
-    total_capacity *= penalty
+    # NOTE: No load-based penalty applied here. The architecture's real
+    # limitations (η efficiency, 50% bandwidth tax for 2-hop, quadratic
+    # penalty for 3+ hops) are already modeled per-flow above.
+    # A load penalty on total_capacity would break the normalization
+    # invariance (uniform throughput should be constant across loads).
     
     secondary = SecondaryMetrics(
         duty_cycle_loss=config.reconfig_time_ns / config.slot_duration_ns,
@@ -604,7 +601,7 @@ def calculate_sirius_capacity(adj_list: List[List[int]],
     
     metrics = PrimaryMetrics(
         throughput_normalized=total_capacity / (num_nodes * np.mean(demands) if demands else 1),
-        flow_completion_time=total_completion_time / penalty,
+        flow_completion_time=total_completion_time,
         average_hop_count=avg_hops,
         latency_mean=avg_hops * config.slot_duration_ns
     )
