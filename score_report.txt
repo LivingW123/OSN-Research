@@ -1,18 +1,18 @@
 Architecture    | Scenario        | Throughput | Score     
 ------------------------------------------------------------
-Opera           | Uniform         |     0.6221 |     0.6038
+Opera           | Uniform         |     0.5943 |     0.5902
 Shale           | Uniform         |     0.2170 |     0.4103
-Sirius          | Uniform         |     0.4025 |     0.4825
-Genetic         | Uniform         |     0.8835 |     0.8081
-Opera           | Skewed          |     0.5139 |     0.5509
+Sirius          | Uniform         |     0.8495 |     0.6852
+Genetic         | Uniform         |     0.9063 |     0.8188
+Opera           | Skewed          |     0.8395 |     0.7099
 Shale           | Skewed          |     0.3547 |     0.4802
-Sirius          | Skewed          |     0.4025 |     0.4825
-Genetic         | Skewed          |     1.1562 |     0.9649
-Opera           | Hotspot         |     0.6148 |     0.6002
+Sirius          | Skewed          |     0.8495 |     0.6852
+Genetic         | Skewed          |     1.1550 |     0.9611
+Opera           | Hotspot         |     0.7805 |     0.6811
 Shale           | Hotspot         |     0.2170 |     0.4103
-Sirius          | Hotspot         |     0.4025 |     0.4825
-Genetic         | Hotspot         |     0.9756 |     0.8610
-Opera           | Traffic Demand  |     0.6221 |     0.6038
+Sirius          | Hotspot         |     0.8495 |     0.6852
+Genetic         | Hotspot         |     0.9716 |     0.8561
+Opera           | Traffic Demand  |     0.5943 |     0.5902
 Shale           | Traffic Demand  |     0.2170 |     0.4103
-Sirius          | Traffic Demand  |     0.4025 |     0.4825
-Genetic         | Traffic Demand  |     0.8835 |     0.8081
+Sirius          | Traffic Demand  |     0.8495 |     0.6852
+Genetic         | Traffic Demand  |     0.9063 |     0.8188

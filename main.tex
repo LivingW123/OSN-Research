@@ -255,6 +255,41 @@
     \subsection{Numerical Results}
     Shale's Round-Robin structure provides a predictable and stable performance across different traffic patterns. Using the waterfilling algorithm, we observe that Shale effectively utilizes available pathways, though it may not reach the peak efficiency of more dynamic architectures under extreme skew.
 
+    \subsubsection{VLB Spray Mechanism}
+    The core routing strategy in Shale is \textbf{Valiant Load Balancing (VLB)}, also referred to as ``spraying.'' Rather than forwarding a packet directly from source~$s$ to destination~$d$, VLB routes traffic through a randomly (or round-robin) selected intermediate node~$m$, splitting each packet's journey into two segments:
+    \[
+        s \xrightarrow{\text{hop 1}} m \xrightarrow{\text{hop 2}} d
+    \]
+    This generalizes to spray depth~$h$, where traffic traverses $h$ intermediate nodes before reaching its destination, yielding a total path length of $L(h) = h + 1$ hops. The key property is:
+
+    \begin{quote}
+    \textit{By spraying traffic uniformly across intermediate nodes, VLB guarantees that no single link is overloaded regardless of the traffic pattern, providing a worst-case throughput floor of $\frac{1}{h+1}$ of the raw link capacity.}
+    \end{quote}
+
+    The trade-off is clear: higher $h$ improves load balance (and thus robustness to adversarial traffic) at the cost of reduced per-flow throughput, since each flow consumes $h+1$ link traversals.
+
+    \paragraph{Code Implementation.}
+    In the benchmarking framework, {\tt Shale\_Alg.py} implements the spray mechanism through two core functions:
+
+    \begin{enumerate}
+        \item \textbf{Topology Generation} (\texttt{RR2(base, dimension)}): Constructs the Shale topology as a Hamming graph. Each node is represented as a tuple in base-$L$ with $x$ digits. Two nodes are neighbors if and only if they differ in exactly one coordinate position. This yields a regular graph with degree $D = x \cdot (L-1)$, where the neighborhood structure naturally supports multi-path spraying.
+
+        \item \textbf{Spray Routing} (\texttt{spray\_short(adj, weights, s, d, k, penalty)}): Finds $k$ diverse short paths between source and destination by iteratively:
+        \begin{itemize}
+            \item Running Dijkstra's shortest path algorithm from $s$ to $d$;
+            \item Penalizing the intermediate nodes in the found path (multiplying their weight by a {\tt penalty\_factor});
+            \item Repeating to find alternate paths that avoid previously used nodes.
+        \end{itemize}
+        This produces $k$ diverse paths that distribute traffic across different intermediate nodes, implementing the VLB spray.
+    \end{enumerate}
+
+    \paragraph{Capacity Model.}
+    In the benchmark (\texttt{Benchmarking\_Metrics.py}), the Shale capacity model implements the VLB penalty directly:
+    \[
+        r_{\text{eff}}(s, d) = \frac{r_{\text{raw}}(s, d)}{h + 1}
+    \]
+    where $r_{\text{raw}}$ is the waterfilling-allocated rate for the $(s, d)$ pair and $h$ is the spray depth. This reflects the fact that every flow in Shale consumes $h+1$ hops, reducing the effective per-flow capacity by the same factor. The resulting normalized throughput scales as $\Theta \approx \frac{1}{h+1}$, which is the guaranteed throughput floor regardless of traffic pattern.
+
     \begin{figure}[H]
         \centering
         \includegraphics[width=0.7\textwidth]{plots/shale_rigorous.png}
@@ -869,14 +904,20 @@
             \hline
             \textbf{Architecture} & \textbf{Uniform} & \textbf{Skewed} & \textbf{Hotspot} & \textbf{Traffic Demand} \\
             \hline
-            Opera & 0.6104 & 0.5127 & 0.5718 & 0.5483 \\
-            Shale & 0.4103 & 0.4802 & 0.4103 & 0.3856 \\
-            Sirius & 0.4825 & 0.4825 & 0.4825 & 0.4617 \\
-            \textbf{Genetic (Robust)} & \textbf{0.7719} & \textbf{0.8800} & \textbf{0.8992} & \textbf{0.8254} \\
+            Opera & 0.5902 & 0.7099 & 0.6811 & 0.5902 \\
+            Shale & 0.4103 & 0.4802 & 0.4103 & 0.4103 \\
+            Sirius & 0.6852 & 0.6852 & 0.6852 & 0.6852 \\
+            \textbf{Genetic (Robust)} & \textbf{0.8188} & \textbf{0.9611} & \textbf{0.8561} & \textbf{0.8188} \\
             \hline
         \end{tabular}
         \label{tab:final_comparison}
     \end{table}
 
-    While architectures like Opera and Shale maintain high performance under uniform traffic, they experience significant degradation in skewed scenarios. Sirius provides high peak capacity for direct scheduled flows but suffers from bandwidth tax under high load. Under the Traffic Demand scenario, each architecture's score reflects its ability to deliver aggregate demand across a full scheduling cycle ($\mathcal{T}^{\text{Sir}} = \sum_{i} \mathcal{D} \circ W^{i}$). Under all evaluated conditions, the \textbf{GA-Robust} architecture demonstrates superior adaptability, consistently outperforming fixed topologies (Opera, Shale) in Skewed, Hotspot, and Traffic Demand scenarios by evolving specialized expander properties.
+    The results reveal each architecture's comparative advantage. \textbf{Sirius} achieves the highest score among fixed architectures under Uniform traffic (0.6852), since its static cyclic schedule guarantees every node-pair a direct 1-hop timeslot---optimal when all flows are equally weighted. However, Sirius is traffic-oblivious: its score is constant across all scenarios, as it cannot adapt its schedule to non-uniform demand.
+
+    \textbf{Opera} excels under non-uniform traffic, rising from 0.5902 (Uniform) to 0.7099 (Skewed) and 0.6811 (Hotspot). This improvement reflects Opera's demand-aware circuit scheduling: when traffic is concentrated on a subset of pairs, Opera dynamically allocates circuit time to meet that demand, achieving near-Sirius throughput with only 4-degree connectivity.
+
+    \textbf{Shale} provides a guaranteed throughput floor of $\approx 1/(h+1)$ via Valiant Load Balancing, making it the most robust under adversarial or unknown traffic patterns. Its score improves under Skewed traffic (0.4802) because locality in the demand aligns with the Hamming graph structure.
+
+    Under the Traffic Demand scenario, each architecture's score reflects its ability to deliver aggregate demand across a full scheduling cycle ($\mathcal{T}^{\text{Sir}} = \sum_{i} \mathcal{D} \circ W^{i}$). Under all evaluated conditions, the \textbf{GA-Robust} architecture demonstrates superior adaptability, consistently outperforming fixed topologies by evolving specialized expander properties that match the given traffic distribution.
 \end{document}
