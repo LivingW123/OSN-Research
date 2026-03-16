@@ -270,7 +270,7 @@ def calculate_topology_capacity(adj_list: List[List[int]],
         src, dst, hops = flow_metas[idx]
         
         if p > 0:
-            # Shannon capacity: C = log2(1 + SNR)
+            # Rate from waterfilling allocation (demand-scaled)
             rate = demand * np.log2(1 + p/n)
             
             # Apply architecture-specific capacity model

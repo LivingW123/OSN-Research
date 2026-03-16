@@ -1,0 +1,29 @@
+\\documentclass[11pt]{article}
+\\usepackage{amsmath}
+\\usepackage{amsfonts}
+\\usepackage{amssymb}
+\\usepackage[margin=1in]{geometry}
+
+\\title{Shale / VLB --- Ideas and Notes}
+\\author{}
+\\date{}
+
+\\begin{document}
+\\maketitle
+
+\\section*{Normalized Throughput Formula}
+
+In the Shale benchmarking framework, the effective per-flow capacity under VLB spraying with spray depth $h$ is modeled as
+\\[
+    r_{\\text{eff}}(s, d) = \\frac{r_{\\text{raw}}(s, d)}{h + 1},
+\\]
+where $r_{\\text{raw}}$ is the waterfilling-allocated rate for the $(s, d)$ pair and $h$ is the spray depth. Each flow in Shale consumes $h+1$ hops, so the effective per-flow capacity is reduced by the same factor.
+
+The resulting normalized throughput therefore scales as
+\\[
+    \\Theta \\approx \\frac{1}{h+1},
+\\]
+which serves as a lower bound on throughput regardless of traffic pattern.
+
+\\end{document}
+
