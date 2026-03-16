@@ -84,6 +84,66 @@ def spray_short(adj_matrix, weights, start_node, end_node, k=3, penalty_factor=2
                 
     return found_paths
 
+def compute_spray_congestion(adj_matrix, num_nodes, flow_demands,
+                              k=3, penalty_factor=2.0):
+    """
+    Congestion-based throughput scaling for VLB spraying (Option C).
+
+    For every flow (src, dst, demand):
+      1. Find *k* diverse paths with spray_short (penalised Dijkstra).
+      2. Split the flow's demand uniformly across those paths.
+      3. Accumulate load on each directed link traversed.
+
+    Returns
+    -------
+    u_max : float
+        Maximum directed-link load.  Throughput scales as 1 / u_max.
+        Always >= 1e-12 (safe for division).
+    per_flow_info : dict
+        (src, dst) -> {'avg_hops': float, 'num_paths': int}
+        Per-flow spray statistics for bandwidth-tax / latency derivation.
+    """
+    # Uniform node weights → Dijkstra ≡ BFS (shortest-hop paths)
+    weights = {i: 1.0 for i in range(num_nodes)}
+
+    link_loads = {}          # (u, v) -> cumulative load
+    per_flow_info = {}       # (src, dst) -> stats
+
+    for src, dst, demand in flow_demands:
+        if demand <= 0 or src == dst:
+            continue
+
+        paths = spray_short(adj_matrix, weights, src, dst,
+                            k=k, penalty_factor=penalty_factor)
+
+        if not paths:
+            # No reachable path — record but contribute no link load
+            per_flow_info[(src, dst)] = {'avg_hops': float('inf'),
+                                         'num_paths': 0}
+            continue
+
+        share = demand / len(paths)
+        total_hops = 0
+
+        for path_tuple, _ in paths:
+            hop_count = len(path_tuple) - 1
+            total_hops += hop_count
+            for idx in range(hop_count):
+                link = (path_tuple[idx], path_tuple[idx + 1])
+                link_loads[link] = link_loads.get(link, 0.0) + share
+
+        per_flow_info[(src, dst)] = {
+            'avg_hops': total_hops / len(paths),
+            'num_paths': len(paths)
+        }
+
+    # Guard: if no links were loaded, return neutral scaling
+    u_max = max(link_loads.values()) if link_loads else 1.0
+    u_max = max(u_max, 1e-12)  # prevent division-by-zero downstream
+
+    return u_max, per_flow_info
+
+
 def RR1(node):
     return create_constrained_matrix(generate_simple_latin_square(node))
 

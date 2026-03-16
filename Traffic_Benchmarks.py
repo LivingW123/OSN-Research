@@ -111,7 +111,9 @@ class PrimaryMetrics:
     """
     Primary Metrics from Benchmarking Framework Section 1.3.
     
-    - throughput: Normalized to line rate [0, 1]
+    - throughput: Normalized to line rate [0, 1]. In this module, all
+      capacity/throughput quantities are expressed as a fraction of a
+      per-link line rate R, and we take R = 1.0 in the implementation.
     - fct: Flow Completion Time (normalized)
     - avg_hops: Average path length L(h)
     - latency_mean: Mean latency in cycles
@@ -251,10 +253,27 @@ def calculate_topology_capacity(adj_list: List[List[int]],
         if return_metrics:
             return 0, PrimaryMetrics(), SecondaryMetrics()
         return 0
-    
+
+    # 2b. Shale congestion pre-computation (Option C)
+    #     Compute u_max and per-flow spray info BEFORE waterfilling
+    #     so the per-flow loop can use congestion-based scaling.
+    shale_congestion = None
+    if architecture_type == "shale":
+        from shale_alg import compute_spray_congestion
+        flow_demands_list = [
+            (src, dst, demands[idx])
+            for idx, (src, dst, _) in enumerate(flow_metas)
+        ]
+        spray_k = max(3, params.shale_h)
+        u_max, per_flow_info = compute_spray_congestion(
+            adj_list, num_nodes, flow_demands_list,
+            k=spray_k, penalty_factor=2.0
+        )
+        shale_congestion = (u_max, per_flow_info)
+
     # 3. Waterfilling allocation
     allocations = waterfilling(channels_noise, total_power)
-    
+
     # 4. Calculate capacity with architecture-specific models
     total_capacity = 0
     total_completion_time = 0
@@ -262,20 +281,32 @@ def calculate_topology_capacity(adj_list: List[List[int]],
     total_bandwidth_tax = 0
     active_flows = 0
     latencies = []
-    
+
     for idx in range(len(channels_noise)):
         p = allocations[idx]
         n = channels_noise[idx]
         demand = demands[idx]
         src, dst, hops = flow_metas[idx]
-        
+
         if p > 0:
             # Rate from waterfilling allocation (demand-scaled)
             rate = demand * np.log2(1 + p/n)
-            
+
+            # Resolve per-flow congestion parameters for Shale
+            cong_factor = None
+            spray_hops = None
+            if shale_congestion is not None:
+                cong_u_max, cong_info = shale_congestion
+                cong_factor = cong_u_max
+                fi = cong_info.get((src, dst))
+                if fi is not None and fi['num_paths'] > 0:
+                    spray_hops = fi['avg_hops']
+
             # Apply architecture-specific capacity model
             effective_rate, bw_tax, latency = _apply_architecture_model(
-                rate, hops, architecture_type, params
+                rate, hops, architecture_type, params,
+                congestion_factor=cong_factor,
+                spray_avg_hops=spray_hops
             )
             
             total_capacity += effective_rate
@@ -310,9 +341,14 @@ def calculate_topology_capacity(adj_list: List[List[int]],
             latency_p99=np.percentile(latencies, 99) if len(latencies) > 1 else 0
         )
         
+        bottleneck = 0.0
+        if shale_congestion is not None:
+            bottleneck = shale_congestion[0]  # u_max
+
         secondary = SecondaryMetrics(
             bandwidth_tax=total_bandwidth_tax / active_flows if active_flows > 0 else 0,
-            capacity_efficiency=total_capacity / (num_nodes * total_power) if total_power > 0 else 0
+            capacity_efficiency=total_capacity / (num_nodes * total_power) if total_power > 0 else 0,
+            bottleneck_util=bottleneck
         )
         
         return total_completion_time, primary, secondary
@@ -320,24 +356,39 @@ def calculate_topology_capacity(adj_list: List[List[int]],
     return total_completion_time
 
 
-def _apply_architecture_model(rate: float, hops: int, 
+def _apply_architecture_model(rate: float, hops: int,
                               architecture_type: str,
-                              params: ArchitectureParams) -> Tuple[float, float, float]:
+                              params: ArchitectureParams,
+                              congestion_factor: float = None,
+                              spray_avg_hops: float = None) -> Tuple[float, float, float]:
     """
     Apply architecture-specific capacity model.
-    
+
+    For Shale, when congestion_factor (u_max) is provided the throughput
+    scales as r / u_max instead of the old r / (h+1).  spray_avg_hops
+    drives bandwidth-tax and latency from actual spray paths.
+
     Returns: (effective_rate, bandwidth_tax, latency)
     """
     if architecture_type == "shale":
-        # Shale VLB Model (Section 2.1)
-        # Throughput scaling: ≈ 1/(h+1)
-        # Latency: τ(h) = αh + β (linear)
-        h = params.shale_h
+        # Shale VLB Model — congestion-based (Option C)
+        # Throughput scaling: r / u_max  (u_max = max directed-link load)
+        # Latency: τ = α · L_spray + β
         alpha = 1.2  # Cycle overhead per spray hop
         beta = 2.5   # Base processing latency
-        effective_rate = rate / (h + 1)
-        bw_tax = h / (h + 1)
-        latency = alpha * h + beta
+
+        if congestion_factor is not None and congestion_factor > 0:
+            effective_rate = rate / congestion_factor
+        else:
+            # Fallback to old hop-count model if no congestion data
+            effective_rate = rate / (params.shale_h + 1)
+
+        avg_L = spray_avg_hops if (spray_avg_hops is not None
+                                    and spray_avg_hops > 0
+                                    and spray_avg_hops != float('inf')) \
+                else (params.shale_h + 1)
+        bw_tax = 1.0 - (1.0 / avg_L) if avg_L > 1 else 0.0
+        latency = alpha * avg_L + beta
         
     elif architecture_type == "opera":
         # Opera Hybrid Model (Section 2.2)
@@ -482,43 +533,46 @@ def run_h_sweep(adj_list: List[List[int]],
                total_power: float = 50.0) -> Dict:
     """
     Shale-specific: Sweep spray depth h.
-    
+
     From Benchmarking Framework Section 2.1:
-    - Throughput scaling: ≈ 1/(h+1)
-    - Average hops: L(h) = h + 1
-    - Latency: τ(h) = αh + β
-    
+    - Throughput scaling: r / u_max  (congestion-based)
+    - Average hops: L(h) ≈ h + 1  (from actual spray paths)
+    - Latency: τ = α·L_spray + β
+
     Returns:
-        Dictionary with h_values, throughput, latency, theoretical_limit
+        Dictionary with h_values, throughput, latency, u_max,
+        avg_spray_hops, and theoretical_limit (old 1/(h+1) for reference)
     """
     if h_values is None:
         h_values = [1, 2, 4, 6, 8, 12]
-    
+
     num_nodes = len(adj_list)
     traffic = generate_uniform_traffic(num_nodes) * load_factor
-    
+
     results = {
         'h_values': h_values,
         'throughput': [],
         'avg_hops': [],
         'latency': [],
+        'u_max': [],
         'theoretical_limit': []
     }
-    
+
     for h in h_values:
         params = ArchitectureParams(shale_h=h)
-        
+
         fct, primary, secondary = calculate_topology_capacity(
             adj_list, traffic, total_power=total_power,
             architecture_type="shale", params=params,
             return_metrics=True
         )
-        
+
         results['throughput'].append(primary.throughput)
-        results['avg_hops'].append(h + 1)  # L(h) = h + 1
+        results['avg_hops'].append(primary.avg_hops)
         results['latency'].append(primary.latency_mean)
+        results['u_max'].append(secondary.bottleneck_util)
         results['theoretical_limit'].append(1.0 / (h + 1))
-    
+
     return results
 
 

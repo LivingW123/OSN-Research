@@ -38,7 +38,7 @@
     We rigorously define the performance metrics used to evaluate each architecture.
 
     \subsubsection{Normalized Throughput ($\mathcal{T}_{norm}$)}
-    In the benchmarking framework (\texttt{Traffic\_Benchmarks.py}), normalized throughput is the total delivered capacity divided by the product of the number of nodes and the mean demand over all source--destination pairs with positive demand:
+    In the benchmarking framework (\texttt{Traffic\_Benchmarks.py}), all rates are expressed as a fraction of the per-link line rate $R$, and the implementation takes $R = 1$ without loss of generality. Normalized throughput is the total delivered capacity divided by the product of the number of nodes and the mean demand over all source--destination pairs with positive demand:
     \begin{equation}
         \mathcal{T}_{norm} = \frac{\sum_{(i,j)} r_{\text{eff}}(i,j)}{N \cdot \bar{D}}
     \end{equation}
@@ -47,7 +47,7 @@
     \paragraph{Effective rate $r_{\text{eff}}$.}
     For each pair $(i,j)$ with positive demand, the framework obtains a waterfilling-derived rate $r_{i,j}$ (from all-pairs shortest-path weights and the power budget), then applies the architecture-specific capacity model to $r_{i,j}$ and the hop count $\ell_{i,j}$ to get $r_{\text{eff}}(i,j)$:
     \begin{itemize}
-        \item \textbf{Shale:} $r_{\text{eff}} = r / (h+1)$, where $h$ is the spray depth (VLB penalty).
+        \item \textbf{Shale:} $r_{\text{eff}} = r / u_{\max}$, where $u_{\max} = \max_{(a,b)\in E}\; \sum_{f \ni (a,b)} D_f / k_f$ is the maximum directed-link load when each flow~$f$ with demand~$D_f$ is split uniformly across~$k_f$ diverse spray paths found by penalised Dijkstra (\texttt{spray\_short}).
         \item \textbf{Opera:} $r_{\text{eff}} = \alpha \cdot r \cdot (1 - \delta/T_{\text{cycle}}) + (1-\alpha) \cdot r / \max(1,\ell)$ (bulk fraction $\alpha$, reconfig delay $\delta$, cycle $T_{\text{cycle}}$; short flows penalized by hop count $\ell$).
         \item \textbf{Sirius:} $r_{\text{eff}} = \eta \cdot r$ for 1-hop; $r_{\text{eff}} = (\eta \cdot r)/2$ for 2-hop; $r_{\text{eff}} = (\eta \cdot r)/\ell^2$ for $\ell \geq 3$ (scheduling efficiency $\eta$). If aggregate load $> 0.85$, total capacity is further scaled by $\exp(-10(\text{load}-0.85))$.
     \end{itemize}
@@ -65,7 +65,7 @@
         \bar{\tau} = \frac{1}{N_{pkts}} \sum_{p} (T_{prop} + T_{queue} + T_{reconfig})
     \end{equation}
     \begin{itemize}
-        \item \textbf{Shale:} $\tau(h) \approx \alpha \cdot h + \beta$, scaling linearly with spray depth $h$.
+        \item \textbf{Shale:} $\tau \approx \alpha \cdot \bar{\ell}_{\text{spray}} + \beta$, where $\bar{\ell}_{\text{spray}}$ is the mean hop count across the spray paths actually used.
         \item \textbf{Opera:} $\tau \approx \ell \cdot \delta$ (hop count $\ell$, reconfig delay $\delta$; matches \texttt{Traffic\_Benchmarks.py}).
         \item \textbf{Sirius:} $\tau \approx \ell \cdot T_{slot}$ (hop count $\ell$, slot duration $T_{slot}$).
     \end{itemize}
@@ -77,7 +77,7 @@
     \end{equation}
     where $\bar{\ell}$ is the average hop count (path length).
     \begin{itemize}
-        \item \textbf{Shale:} $\mathcal{B}_{tax} \approx h/(h+1)$.
+        \item \textbf{Shale:} $\mathcal{B}_{tax} = 1 - 1/\bar{\ell}_{\text{spray}}$, derived from the mean spray-path hop count $\bar{\ell}_{\text{spray}}$.
         \item \textbf{Opera/Sirius (Indirect):} $\mathcal{B}_{tax} = 1/2$ for 2-hop spraying.
     \end{itemize}
 
@@ -271,7 +271,7 @@
     This generalizes to spray depth~$h$, where traffic traverses $h$ intermediate nodes before reaching its destination, yielding a total path length of $L(h) = h + 1$ hops. The key property is:
 
     \begin{quote}
-    \textit{By spraying traffic uniformly across intermediate nodes, VLB guarantees that no single link is overloaded regardless of the traffic pattern, providing a worst-case throughput floor of $\frac{1}{h+1}$ of the raw link capacity.}
+    \textit{By spraying traffic uniformly across intermediate nodes, VLB reduces worst-link congestion.  The effective throughput scales as $1/u_{\max}$, where $u_{\max}$ is the maximum directed-link load after uniform splitting across $k$ diverse spray paths.  On sufficiently connected topologies with uniform traffic, $u_{\max} \to h{+}1$ and the model recovers the classical $1/(h{+}1)$ floor.}
     \end{quote}
 
     The trade-off is clear: higher $h$ improves load balance (and thus robustness to adversarial traffic) at the cost of reduced per-flow throughput, since each flow consumes $h+1$ link traversals.
@@ -291,8 +291,8 @@
         This produces $k$ diverse paths that distribute traffic across different intermediate nodes, implementing the VLB spray.
     \end{enumerate}
 
-    \paragraph{Capacity Model.}
-    In the benchmark (\texttt{Benchmarking\_Metrics.py}), the Shale capacity model implements the VLB penalty directly in its capacity calculations, accounting for the additional hops introduced by spraying without explicitly deriving the normalized throughput formula in the main text.
+    \paragraph{Capacity Model (Congestion-Based).}
+    In the benchmark (\texttt{Traffic\_Benchmarks.py}), the Shale capacity model computes the maximum directed-link utilisation $u_{\max}$ by (i)~finding $k = \max(3, h)$ diverse spray paths per flow via \texttt{spray\_short}, (ii)~splitting each flow's demand uniformly across its paths, and (iii)~summing the resulting load on every directed link.  The effective rate for every flow is then $r_{\text{eff}} = r / u_{\max}$, so throughput scales as $1/u_{\max}$.  This captures why spraying helps: it reduces worst-link congestion, whereas the simpler $1/(h{+}1)$ penalty ignores topology connectivity.
 
     \begin{figure}[H]
         \centering
@@ -307,20 +307,8 @@
 
     \begin{figure}[H]
         \centering
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/shale_congestion_report.png}
-            \caption{Latency Scaling ($h \in [1,12]$)}
-            \label{fig:shale_latency_time}
-        \end{minipage}
-        \hfill
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/shale_latency_dist.png}
-            \caption{Hop Scaling ($h \in [1,12]$)}
-            \label{fig:shale_hop_dist}
-        \end{minipage}
-        \caption{Shale VLB Performance Scaling}
+        \includegraphics[width=0.8\textwidth]{images/shale_h_sweep_benchmark.png}
+        \caption{Shale VLB Performance Scaling: Throughput decay vs.\ theoretical $1/(h{+}1)$ (left) and latency regression $\tau(h) = \alpha h + \beta$ (right) for $h \in [1,12]$.}
         \label{fig:shale_h_range}
     \end{figure}
 
@@ -398,12 +386,13 @@
     where $T$ is the standard Token Budget and $\sqrt[h]{N}$ represents the fan-in/fan-out degree.
 
     \subsubsection{Throughput \& Bandwidth Functions}
-    \textbf{Throughput Guarantee:} The theoretical throughput guarantee ($Th$) scales inversely with the total hops required ($h_{spray} + 1$). Our simulations verify that VLB routing provides a stable capacity floor matching the bandwidth tax:
+    \textbf{Throughput Guarantee:} The throughput guarantee scales as $Th \propto 1/u_{\max}$, where $u_{\max}$ is the maximum directed-link load under uniform spray splitting.  On well-connected topologies with uniform traffic, $u_{\max} \approx h{+}1$ and the classical floor is recovered:
     \begin{itemize}
-        \item For $h=1$: $Th \approx 0.50$ line rate.
-        \item For $h=2$ (VLB): $Th \approx 0.33$ line rate.
-        \item For $h=4$ (VLB): $Th \approx 0.20$ line rate.
+        \item For $h=1$: $Th \approx 1/u_{\max}$, approaching $0.50$ on dense graphs.
+        \item For $h=2$ (VLB): $Th \approx 1/u_{\max}$, approaching $0.33$ on dense graphs.
+        \item For $h=4$ (VLB): $Th \approx 1/u_{\max}$, approaching $0.20$ on dense graphs.
     \end{itemize}
+    On sparser topologies, $u_{\max} > h{+}1$ and throughput is lower, faithfully reflecting the additional congestion from limited link diversity.
 
     \textbf{Load Factor ($L$):} We define the Load Factor as:
     \begin{equation}
@@ -438,7 +427,7 @@
         \label{fig:shale_load_sweep}
     \end{figure}
 
-    The simulation confirms the theoretical limits. For $h=1$, throughput saturates near 0.5. For $h=4$, saturation occurs near 0.20, matching the $1/(4+1)$ capacity model. As we increase to $h=8$ and $h=12$, the throughput capacity continues to follow the $1/(h+1)$ trend, illustrating the strict throughput guarantees provided by VLB regardless of node count.
+    The simulation confirms the congestion-based model.  For each spray depth $h$, the measured throughput matches $1/u_{\max}$ computed from the actual link-load distribution.  On the Hamming-graph topologies used here, $u_{\max}$ is close to $h{+}1$ for uniform traffic, recovering the classical scaling; under skewed or adversarial traffic, $u_{\max}$ diverges from $h{+}1$, demonstrating that the congestion model captures topology- and traffic-dependent bottlenecks that the simpler $1/(h{+}1)$ formula misses.
 
     \subsubsection{Latency Sensitivity Analysis}
     Finally, we evaluate Shale under varying latency requirements using waterfilling on latency-constrained subgraphs.
@@ -892,6 +881,13 @@
         \caption{Performance comparison under non-uniform traffic.}
     \end{figure}
 
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=0.8\textwidth]{images/benchmark_load_sweep_traffic_demand.png}
+        \caption{Throughput and FCT vs Load Factor under traffic demand.}
+        \label{fig:load_sweep_traffic_demand}
+    \end{figure}
+
     The unified results (Figure~\ref{fig:scenario_comparison}) provide a holistic view of topology capacity.
 
     \begin{figure}[H]
@@ -899,6 +895,25 @@
         \includegraphics[width=0.8\textwidth]{images/benchmark_scenario_comparison.png}
         \caption{Cross-Architecture Comparison: Composite scores across traffic and failure scenarios.}
         \label{fig:scenario_comparison}
+    \end{figure}
+
+    \begin{figure}[H]
+        \centering
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{images/traffic_benchmark_capacity.png}
+            \caption{Shannon Capacity vs Power Budget}
+            \label{fig:benchmark_capacity}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{images/traffic_benchmark_completion_time.png}
+            \caption{Flow Completion Time vs Power Budget}
+            \label{fig:benchmark_completion_time}
+        \end{minipage}
+        \caption{Waterfilling performance across architectures and traffic models.}
+        \label{fig:wf_comparison}
     \end{figure}
 
     \begin{table}[H]
