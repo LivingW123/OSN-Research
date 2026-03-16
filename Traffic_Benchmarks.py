@@ -178,9 +178,8 @@ class ArchitectureParams:
     opera_t_cycle: float = 50.0         # Cycle time T_cycle
     
     # Sirius Static Parameters (Section 2.3)
-    sirius_eta: float = 0.9616          # Efficiency (100-3.84)/100
-    sirius_t_slot: float = 100.0        # Slot size T_slot (ns)
-    sirius_delta: float = 3.84          # Reconfig δ (ns)
+    sirius_delta: float = 0.0384        # Reconfig ratio δ/T_slot (3.84ns / 100ns)
+    sirius_eta: float = 0.9616          # Efficiency 1 - δ/T_slot
 
 
 # =================================================================================
@@ -372,23 +371,26 @@ def _apply_architecture_model(rate: float, hops: int,
     """
     if architecture_type == "shale":
         # Shale VLB Model — congestion-based (Option C)
-        # Throughput scaling: r / u_max  (u_max = max directed-link load)
-        # Latency: τ = α · L_spray + β
-        alpha = 1.2  # Cycle overhead per spray hop
-        beta = 2.5   # Base processing latency
+        # Each cell takes h spray hops + h direct hops = 2h total.
+        # Throughput: r / u_eff where u_eff = max(u_max_measured, h+1)
+        #   On well-connected graphs u_max ≈ h+1; on sparse graphs u_max > h+1.
+        # Latency: τ = γ · (h+1) + β₀  (h+1 is the logical path length)
+        gamma = 1.2   # Cycle overhead per spray hop
+        beta_0 = 2.5  # Base processing latency
+        h = params.shale_h
 
+        # Effective congestion factor: at least h+1 (theoretical floor)
         if congestion_factor is not None and congestion_factor > 0:
-            effective_rate = rate / congestion_factor
+            u_eff = max(congestion_factor, h + 1)
         else:
-            # Fallback to old hop-count model if no congestion data
-            effective_rate = rate / (params.shale_h + 1)
+            u_eff = h + 1
+        effective_rate = rate / u_eff
 
-        avg_L = spray_avg_hops if (spray_avg_hops is not None
-                                    and spray_avg_hops > 0
-                                    and spray_avg_hops != float('inf')) \
-                else (params.shale_h + 1)
-        bw_tax = 1.0 - (1.0 / avg_L) if avg_L > 1 else 0.0
-        latency = alpha * avg_L + beta
+        # Shale paper: total path = 2h hops, tax = 1 - 1/(2h)
+        total_path = 2 * h
+        bw_tax = 1.0 - (1.0 / total_path) if total_path > 1 else 0.0
+        # Latency uses the logical path length h+1 (not graph shortest path)
+        latency = gamma * (h + 1) + beta_0
         
     elif architecture_type == "opera":
         # Opera Hybrid Model (Section 2.2)
@@ -411,8 +413,7 @@ def _apply_architecture_model(rate: float, hops: int,
         # Sprayed (2-hop): η/2 (50% tax)
         # Multi-hop: η / hops^2 (quadratic degradation)
         eta = params.sirius_eta
-        t_slot = params.sirius_t_slot
-        
+
         if hops <= 1:
             effective_rate = rate * eta
             bw_tax = 0
@@ -422,13 +423,15 @@ def _apply_architecture_model(rate: float, hops: int,
         else:
             effective_rate = (rate * eta) / (hops ** 2)
             bw_tax = 1 - (1 / hops)
-        
-        latency = hops * t_slot
+
+        latency = hops * (1.0 / eta)  # normalized: each slot costs 1/η time units
         
     else:
-        # No architecture-specific model
-        effective_rate = rate
-        bw_tax = 0
+        # Generic expander model (GA-evolved topologies)
+        # Multi-hop paths pay a bandwidth tax of (hops-1)/hops
+        # No duty-cycle loss (static topology, no reconfiguration)
+        effective_rate = rate / max(1, hops)
+        bw_tax = 1.0 - (1.0 / max(1, hops))
         latency = hops
     
     return effective_rate, bw_tax, latency
@@ -657,49 +660,54 @@ def compare_architectures(architectures: Dict[str, List[List[int]]],
 @dataclass
 class BenchmarkScore:
     """
-    Benchmark Score from Framework Section 1.4.
-    
-    Scalar/vector score for ranking architectures.
+    Benchmark Score from Framework Section 1.2.6.
+
+    Multiplicative composite:
+      S = T_norm * (1 - B_tax) * (1 - D_loss) * 1/(1 + tau) * 1/FCT_norm
     """
     architecture: str
-    aggregate_throughput: float
-    latency_throughput_score: float
-    robustness_score: float
-    degradation_score: float
-    
-    def composite(self, weights: Dict[str, float] = None) -> float:
-        """Weighted composite score."""
-        if weights is None:
-            weights = {
-                'throughput': 0.4,
-                'latency': 0.3,
-                'robustness': 0.2,
-                'degradation': 0.1
-            }
-        return (
-            weights['throughput'] * self.aggregate_throughput +
-            weights['latency'] * self.latency_throughput_score +
-            weights['robustness'] * self.robustness_score +
-            weights['degradation'] * self.degradation_score
-        )
+    throughput_norm: float       # T_norm (§1.2.1)
+    fct_norm: float              # FCT_norm (§1.2.2)
+    latency_mean: float          # tau_bar (§1.2.3)
+    bandwidth_tax: float         # B_tax (§1.2.4)
+    duty_cycle_loss: float       # D_loss (§1.2.5)
+
+    def composite(self) -> float:
+        """Multiplicative composite score (§1.2.6)."""
+        fct_factor = 1.0 / (1.0 + np.log(max(self.fct_norm, 1.0)))
+        latency_factor = 1.0 / (1.0 + self.latency_mean)
+        return (self.throughput_norm
+                * (1.0 - self.bandwidth_tax)
+                * (1.0 - self.duty_cycle_loss)
+                * latency_factor
+                * fct_factor)
+
+
+def _duty_cycle_loss(architecture: str, params: ArchitectureParams) -> float:
+    """Compute D_loss for a given architecture."""
+    if architecture == "opera":
+        return params.opera_delta / params.opera_t_cycle
+    elif architecture == "sirius":
+        return params.sirius_delta  # already a ratio δ/T_slot
+    else:  # shale, genetic, etc.
+        return 0.0
 
 
 def compute_benchmark_score(architecture: str,
                            primary: PrimaryMetrics,
-                           secondary: SecondaryMetrics) -> BenchmarkScore:
+                           secondary: SecondaryMetrics,
+                           params: ArchitectureParams = None) -> BenchmarkScore:
     """
     Compute benchmark score from collected metrics.
     """
-    # Latency-Throughput Pareto score
-    if primary.latency_mean > 0:
-        lt_score = primary.throughput / (1 + np.log1p(primary.latency_mean))
-    else:
-        lt_score = primary.throughput
-    
+    if params is None:
+        params = ArchitectureParams()
+
     return BenchmarkScore(
         architecture=architecture,
-        aggregate_throughput=primary.throughput,
-        latency_throughput_score=lt_score,
-        robustness_score=1.0 - secondary.bandwidth_tax,
-        degradation_score=secondary.capacity_efficiency
+        throughput_norm=primary.throughput,
+        fct_norm=max(primary.fct, 1.0),
+        latency_mean=primary.latency_mean,
+        bandwidth_tax=secondary.bandwidth_tax,
+        duty_cycle_loss=_duty_cycle_loss(architecture, params)
     )

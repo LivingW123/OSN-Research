@@ -100,7 +100,12 @@ for name, adj in TOPOS.items():
 # ====================================================================
 
 def _build_wf_data(adj_list, traffic, total_power=POWER):
-    """Replicate waterfilling pipeline; return intermediates."""
+    """Replicate waterfilling pipeline; return intermediates.
+
+    Noise for channel (i,j) = hop_distance * scale_factor / demand.
+    Higher demand → lower noise → more power allocated (priority).
+    Longer path  → higher noise → harder to serve (bandwidth tax).
+    """
     num = len(adj_list)
     dist = _get_all_pairs_dist(adj_list, num)
     target = num * 10.0
@@ -116,7 +121,7 @@ def _build_wf_data(adj_list, traffic, total_power=POWER):
             d = traffic[i, j]
             if d > 0:
                 h = dist[i, j] if dist[i, j] != np.inf else 100
-                noise_list.append(h * sf)
+                noise_list.append(h * sf / d)
                 dem_list.append(d)
 
     noise = np.array(noise_list)
@@ -144,8 +149,8 @@ def _plot_wf(noise, alloc, wl, title, fname, show_bottleneck=False):
     ax.axhline(wl, color='red', ls='--', lw=1.5,
                label=f'Water Level ({wl:.2f})')
 
-    ax.set_xlabel('Channel / Link Index')
-    ax.set_ylabel('Power / Noise Level')
+    ax.set_xlabel('Channel / Link Index (unitless)')
+    ax.set_ylabel('Power / Noise Level (ratio)')
     ax.set_title(title)
     ax.legend(loc='upper right', fontsize=8)
     ax.grid(axis='y', alpha=.3)
@@ -153,6 +158,96 @@ def _plot_wf(noise, alloc, wl, title, fname, show_bottleneck=False):
     plt.savefig(os.path.join(IMG_DIR, fname), dpi=DPI, bbox_inches='tight')
     plt.close()
     print(f"  ✓ {fname}")
+
+
+# ====================================================================
+# 2b. THREE-PANEL WATERFILLING (Uniform / Skewed / Hotspot)
+# ====================================================================
+print("\n3-panel waterfilling figures …")
+
+_traffic_panels = [
+    ('Uniform',  generate_uniform_traffic(N) * 0.5),
+    ('Skewed',   generate_skewed_traffic(N) * 0.5),
+    ('Hotspot',  generate_hotspot_traffic(N) * 0.5),
+]
+
+def _plot_wf_3panel(adj_list, arch_name, fname, color='#2196F3',
+                    total_power=POWER):
+    """Generate a 3-panel heatmap: noise relative to water level per src-dst.
+
+    Green = well below water level (easily served).
+    Yellow = near water level (marginal).
+    Red   = above water level (bottlenecked, gets no power).
+    Gray  = no demand for that pair.
+    """
+    num = len(adj_list)
+    results = []
+    for plabel, ptm in _traffic_panels:
+        noise, alloc, wl = _build_wf_data(adj_list, ptm, total_power)
+        # Rebuild N×N noise matrix
+        noise_mat = np.full((num, num), np.nan)
+        alloc_mat = np.full((num, num), np.nan)
+        idx = 0
+        for i in range(num):
+            for j in range(num):
+                if i == j:
+                    continue
+                d = ptm[i, j]
+                if d > 0:
+                    noise_mat[i, j] = noise[idx]
+                    alloc_mat[i, j] = alloc[idx]
+                    idx += 1
+        results.append((plabel, noise_mat, alloc_mat, wl))
+
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5),
+                             gridspec_kw={'width_ratios': [1, 1, 1, 0.05],
+                                          'wspace': 0.35})
+    cbar_ax = axes[3]  # dedicated colorbar axis
+
+    for pi, (plabel, noise_mat, alloc_mat, wl) in enumerate(results):
+        ax = axes[pi]
+        # Compute noise / water_level ratio: <1 = served, >1 = bottlenecked
+        ratio = np.full((num, num), np.nan)
+        for i in range(num):
+            for j in range(num):
+                if i == j:
+                    continue
+                if not np.isnan(noise_mat[i, j]) and wl > 0:
+                    ratio[i, j] = noise_mat[i, j] / wl
+
+        # Plot with diverging colormap centered at 1.0
+        im = ax.imshow(ratio, cmap='RdYlGn_r', vmin=0.5, vmax=1.5,
+                       aspect='equal', interpolation='nearest')
+
+        # Annotate: show bottleneck count and served count
+        bottleneck = np.nansum(ratio >= 1.0)
+        served = np.nansum(ratio < 1.0)
+
+        # Mark no-demand cells with gray
+        for i in range(num):
+            for j in range(num):
+                if i != j and np.isnan(ratio[i, j]):
+                    ax.add_patch(plt.Rectangle((j-0.5, i-0.5), 1, 1,
+                                 fill=True, color='#E0E0E0', zorder=0))
+
+        ax.set_xlabel('Destination')
+        if pi == 0:
+            ax.set_ylabel('Source')
+        ax.set_title(f'{arch_name} — {plabel}\n'
+                     f'Served: {int(served)}  |  Bottlenecked: {int(bottleneck)}')
+        ax.set_xticks(range(num))
+        ax.set_yticks(range(num))
+
+    cbar = fig.colorbar(im, cax=cbar_ax, label='Noise / Water Level')
+    cbar.ax.axhline(1.0, color='black', linewidth=2)
+
+    plt.savefig(os.path.join(IMG_DIR, fname), dpi=DPI, bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ {fname}")
+
+_plot_wf_3panel(shale_adj,   'Shale',  'shale_wf_3panel.png',  color=C_SHALE)
+_plot_wf_3panel(opera_adj,   'Opera',  'opera_wf_3panel.png',  color=C_OPERA)
+_plot_wf_3panel(sirius_adj,  'Sirius', 'sirius_wf_3panel.png', color=C_SIRIUS)
 
 
 # ====================================================================
@@ -198,8 +293,8 @@ ax1.plot(h_vals, h_res['throughput'], 'o-', color=C_SHALE,
          label='Simulated ($1/u_{\\max}$)')
 ax1.plot(h_vals, h_res['theoretical_limit'], 's--', color='gray',
          label='Theoretical $1/(h{+}1)$')
-ax1.set_xlabel('Spray Depth ($h$)')
-ax1.set_ylabel('Normalized Throughput')
+ax1.set_xlabel('Spray Depth $h$ (unitless)')
+ax1.set_ylabel('Normalized Throughput (fraction of line rate)')
 ax1.set_title('Throughput vs Spray Depth')
 ax1.legend()
 ax1.grid(alpha=.3)
@@ -209,8 +304,8 @@ ax2.plot(h_vals, h_res['latency'], 'o-', color='#E53935', label='Latency')
 coeffs = np.polyfit(h_vals, h_res['latency'], 1)
 ax2.plot(h_vals, np.polyval(coeffs, h_vals), '--', color='gray',
          label=f'Fit: {coeffs[0]:.2f}h + {coeffs[1]:.2f}')
-ax2.set_xlabel('Spray Depth ($h$)')
-ax2.set_ylabel('Latency (cycles)')
+ax2.set_xlabel('Spray Depth $h$ (unitless)')
+ax2.set_ylabel('Latency (normalized cycles)')
 ax2.set_title('Latency vs Spray Depth')
 ax2.legend()
 ax2.grid(alpha=.3)
@@ -240,12 +335,12 @@ for idx, h in enumerate(h_vals):
                label=f'h={h}', markersize=4)
 
 for ax, ylabel, title, fname in [
-    (ax_tp, 'Normalized Throughput', 'Throughput vs Load Factor',
-     'shale_throughput_vs_load.png'),
-    (ax_fc, 'Avg Normalized FCT', 'Flow Completion Time vs Load Factor',
-     'shale_fct_vs_load.png'),
+    (ax_tp, 'Normalized Throughput (fraction of line rate)',
+     'Throughput vs Load Factor', 'shale_throughput_vs_load.png'),
+    (ax_fc, 'Avg Normalized FCT (ratio)',
+     'Flow Completion Time vs Load Factor', 'shale_fct_vs_load.png'),
 ]:
-    ax.set_xlabel('Load Factor ($L$)')
+    ax.set_xlabel('Load Factor $L$ (ratio)')
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     ax.legend(fontsize=8)
@@ -279,14 +374,14 @@ fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
 ax1.plot(loads_fine, [bt * 100 for bt in opera_sweep['bandwidth_tax']],
          'o-', color=C_OPERA)
-ax1.set_xlabel('Network Load')
+ax1.set_xlabel('Network Load (fraction of capacity)')
 ax1.set_ylabel('Bandwidth Tax (%)')
 ax1.set_title('Bandwidth Tax vs Load')
 ax1.grid(alpha=.3)
 
 ax2.plot(loads_fine, opera_sweep['latency_mean'], 'o-', color=C_OPERA)
-ax2.set_xlabel('Network Load')
-ax2.set_ylabel('Avg Latency (cycles)')
+ax2.set_xlabel('Network Load (fraction of capacity)')
+ax2.set_ylabel('Avg Latency (normalized cycles)')
 ax2.set_title('Latency vs Load')
 ax2.grid(alpha=.3)
 
@@ -298,15 +393,17 @@ print("  ✓ opera_efficiency_report.png")
 
 # ── opera_wf_throughput_vs_load ──────────────────────────────────────
 fig, ax = plt.subplots(figsize=(8, 5))
-ax.plot(loads_fine, opera_sweep['throughput'], 'o-', color=C_OPERA,
-        label='Delivered Throughput (WF-Limited)')
-ax.plot(loads_fine, loads_fine, '--', color='gray', label='Ideal (Zero Loss)')
-if opera_sweep['throughput']:
-    cap = max(opera_sweep['throughput'])
-    ax.axhline(cap, ls=':', color='#E53935',
-               label=f'Waterfilling Capacity Limit ({cap:.3f})')
-ax.set_xlabel('Offered Load (Rate per node)')
-ax.set_ylabel('Throughput (rate per node)')
+opera_delivered = [min(t, L) for t, L in zip(opera_sweep['throughput'], loads_fine)]
+cap = max(opera_sweep['throughput']) if opera_sweep['throughput'] else 0
+opera_ideal = [min(L, cap) for L in loads_fine]
+ax.plot(loads_fine, opera_delivered, 'o-', color=C_OPERA,
+        label='Delivered Throughput')
+ax.plot(loads_fine, opera_ideal, '--', color='gray',
+        label=f'Ideal (cap={cap:.3f})')
+ax.axhline(cap, ls=':', color='#E53935',
+           label=f'Capacity Ceiling ({cap:.3f})')
+ax.set_xlabel('Offered Load (fraction of line rate)')
+ax.set_ylabel('Throughput (fraction of line rate)')
 ax.set_title('Opera Throughput vs Offered Load')
 ax.legend(fontsize=8)
 ax.grid(alpha=.3)
@@ -328,18 +425,24 @@ sir_sweep = run_load_sweep(sirius_adj, 'sirius', TrafficType.UNIFORM,
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-ax1.plot(loads_fine, sir_sweep['throughput'], 'o-', color=C_SIRIUS,
-         label='Simulation')
-ax1.plot(loads_fine, loads_fine, '--', color='gray', label='Ideal')
-ax1.set_xlabel('Offered Load')
-ax1.set_ylabel('Throughput')
+delivered = [min(t, L) for t, L in zip(sir_sweep['throughput'], loads_fine)]
+ax1.plot(loads_fine, delivered, 'o-', color=C_SIRIUS,
+         label='Delivered')
+cap_ceil = max(sir_sweep['throughput'])  # capacity ceiling (peak before collapse)
+ideal = [min(L, cap_ceil) for L in loads_fine]
+ax1.plot(loads_fine, ideal, '--', color='gray',
+         label=f'Ideal (cap={cap_ceil:.2f})')
+ax1.axhline(cap_ceil, ls=':', color='#E53935', lw=1,
+            label=f'$\\eta/\\mathcal{{H}}$ ceiling')
+ax1.set_xlabel('Offered Load (fraction of line rate)')
+ax1.set_ylabel('Delivered Throughput (fraction of line rate)')
 ax1.set_title('Throughput vs Load')
 ax1.legend()
 ax1.grid(alpha=.3)
 
 ax2.plot(loads_fine, sir_sweep['fct'], 'o-', color=C_SIRIUS)
-ax2.set_xlabel('Offered Load')
-ax2.set_ylabel('Avg FCT (slots)')
+ax2.set_xlabel('Offered Load (fraction of line rate)')
+ax2.set_ylabel('Avg FCT (normalized ratio)')
 ax2.set_title('Flow Completion Time vs Load')
 ax2.grid(alpha=.3)
 
@@ -361,7 +464,7 @@ for label, tm in [('Uniform\nTotal', generate_uniform_traffic(N) * 0.5),
 fig, ax = plt.subplots(figsize=(6, 5))
 bars = ax.bar(list(scenarios_sir.keys()), list(scenarios_sir.values()),
               color=[C_SIRIUS, '#FFB74D'], edgecolor='black', linewidth=.5)
-ax.set_ylabel('Achieved Throughput')
+ax.set_ylabel('Achieved Throughput (fraction of line rate)')
 ax.set_title('Sirius Throughput by Traffic Scenario')
 ax.grid(axis='y', alpha=.3)
 plt.tight_layout()
@@ -418,14 +521,14 @@ for scen_key, (ttype, scen_label) in traffic_scenarios.items():
         ax2.plot(loads_bench, res['fct'], 'o-', color=acolor,
                  label=alabel, markersize=4)
 
-    ax1.set_xlabel('Load Factor')
-    ax1.set_ylabel('Normalized Throughput')
+    ax1.set_xlabel('Load Factor (ratio)')
+    ax1.set_ylabel('Normalized Throughput (fraction of line rate)')
     ax1.set_title(f'Throughput ({scen_label})')
     ax1.legend(fontsize=8)
     ax1.grid(alpha=.3)
 
-    ax2.set_xlabel('Load Factor')
-    ax2.set_ylabel('Flow Completion Time')
+    ax2.set_xlabel('Load Factor (ratio)')
+    ax2.set_ylabel('Flow Completion Time (normalized ratio)')
     ax2.set_yscale('log')
     ax2.set_title(f'FCT ({scen_label})')
     ax2.legend(fontsize=8)
@@ -456,7 +559,7 @@ for scen_key, (ttype, scen_label) in traffic_scenarios.items():
         _, prim, sec = calculate_topology_capacity(
             TOPOS[aname], tm, total_power=POWER,
             architecture_type=atype, return_metrics=True)
-        score = compute_benchmark_score(alabel, prim, sec)
+        score = compute_benchmark_score(atype, prim, sec)
         composite_scores[alabel].append(score.composite())
 
 scen_labels = [v[1] for v in traffic_scenarios.values()]
@@ -468,8 +571,8 @@ for i, (alabel, acolor) in enumerate(zip(arch_labels, arch_colors)):
     ax.bar(x + i * width, composite_scores[alabel], width,
            label=alabel, color=acolor, edgecolor='black', linewidth=.4)
 
-ax.set_xlabel('Scenario')
-ax.set_ylabel('Composite Benchmark Score')
+ax.set_xlabel('Traffic Scenario')
+ax.set_ylabel('Composite Benchmark Score $S_{bench}$ (dimensionless)')
 ax.set_title('Cross-Architecture Comparison')
 ax.set_xticks(x + 1.5 * width)
 ax.set_xticklabels(scen_labels)
@@ -509,14 +612,14 @@ for pi, (plabel, ptm) in enumerate(panel_traffics):
         axes_fct[pi].plot(power_range, fcts, 'o-', color=acolor,
                           label=alabel, markersize=4)
 
-    for ax_arr, ylabel in [(axes_cap, 'Shannon Capacity'),
-                           (axes_fct, 'Total FCT (s)')]:
-        ax_arr[pi].set_xlabel('Power Budget (P)')
+    for ax_arr, ylabel in [(axes_cap, 'Throughput (fraction of line rate)'),
+                           (axes_fct, 'Total FCT (normalized ratio)')]:
+        ax_arr[pi].set_xlabel('Power Budget $P$ (unitless)')
         ax_arr[pi].set_title(plabel)
         ax_arr[pi].legend(fontsize=7)
         ax_arr[pi].grid(alpha=.3)
-    axes_cap[0].set_ylabel('Shannon Capacity')
-    axes_fct[0].set_ylabel('Total Flow Completion Time (s)')
+    axes_cap[0].set_ylabel('Throughput (fraction of line rate)')
+    axes_fct[0].set_ylabel('Total Flow Completion Time (normalized ratio)')
 
 for figobj, fname in [(fig_cap, 'traffic_benchmark_capacity.png'),
                        (fig_fct, 'traffic_benchmark_completion_time.png')]:

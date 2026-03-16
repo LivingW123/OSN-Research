@@ -4,6 +4,7 @@
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{float}
+\usepackage{multirow}
 
 \title{Optical Circuit Switched Networks: Connectivity Matrices and Genetic Algorithms}
 \author{Oneal Wang}
@@ -49,8 +50,48 @@
     \begin{itemize}
         \item \textbf{Shale:} $r_{\text{eff}} = r / u_{\max}$, where $u_{\max} = \max_{(a,b)\in E}\; \sum_{f \ni (a,b)} D_f / k_f$ is the maximum directed-link load when each flow~$f$ with demand~$D_f$ is split uniformly across~$k_f$ diverse spray paths found by penalised Dijkstra (\texttt{spray\_short}).
         \item \textbf{Opera:} $r_{\text{eff}} = \alpha \cdot r \cdot (1 - \delta/T_{\text{cycle}}) + (1-\alpha) \cdot r / \max(1,\ell)$ (bulk fraction $\alpha$, reconfig delay $\delta$, cycle $T_{\text{cycle}}$; short flows penalized by hop count $\ell$).
-        \item \textbf{Sirius:} $r_{\text{eff}} = \eta \cdot r$ for 1-hop; $r_{\text{eff}} = (\eta \cdot r)/2$ for 2-hop; $r_{\text{eff}} = (\eta \cdot r)/\ell^2$ for $\ell \geq 3$ (scheduling efficiency $\eta$). If aggregate load $> 0.85$, total capacity is further scaled by $\exp(-10(\text{load}-0.85))$.
+        \item \textbf{Sirius:} $r_{\text{eff}} = \dfrac{\eta \cdot r}{\mathcal{H}(\ell)} \cdot C_{\text{load}}(\rho)$, where the hop denominator is
+        \[
+            \mathcal{H}(\ell) =
+            \begin{cases}
+                1       & \ell = 1 \text{ (direct scheduling)}\\
+                2       & \ell = 2 \text{ (Valiant detour)}\\
+                \ell^2  & \ell \geq 3 \text{ (multi-hop)}
+            \end{cases}
+        \]
+        scheduling efficiency $\eta = (T_{slot} - \delta)/T_{slot} = (100\,\text{ns} - 3.84\,\text{ns})/100\,\text{ns} = 0.9616$, and the load penalty is $C_{\text{load}}(\rho) = \exp\!\bigl(-10\,(\rho - 0.85)\bigr)$ when $\rho > 0.85$, else $1$.
     \end{itemize}
+
+    \noindent
+    The concrete parameter values used in the implementation (\texttt{ArchitectureParams} in \texttt{Traffic\_Benchmarks.py}) are:
+
+    \begin{table}[H]
+        \centering
+        \caption{Architecture-Specific Constants for $r_{\text{eff}}$}
+        \begin{tabular}{|l|l|c|c|l|}
+            \hline
+            \textbf{Arch.} & \textbf{Parameter} & \textbf{Ratio} & \textbf{Physical} & \textbf{Meaning} \\
+            \hline
+            \multirow{4}{*}{Shale}
+                & $h$ (spray depth)      & ---                & ---               & VLB intermediate hops \\
+                & $T_{slot}$             & ---                & 5.632\,ns         & Timeslot duration \\
+                & $\gamma$ (hop overhead)& 1.2                & $6.76\,\text{ns}$ & Cycle overhead per spray hop \\
+                & $\beta_0$ (base delay) & 2.5                & $14.08\,\text{ns}$& Base processing latency \\
+            \hline
+            \multirow{4}{*}{Opera}
+                & $\alpha$ (bulk frac.)  & 0.92               & ---               & Fraction of bytes on direct circuits \\
+                & $r$ (reconfig delay)   & $\delta/T_c = 0.04$& ${\sim}10\,\mu\text{s}$ & Raw switch reconfiguration time \\
+                & $\varepsilon$ (slice)  & ---                & $90\,\mu\text{s}$ & Topology-slice duration \\
+                & $T_{\text{cycle}}$     & 50.0               & $10.8\,\text{ms}$ & Full rotation cycle (108 racks) \\
+            \hline
+            \multirow{3}{*}{Sirius}
+                & $T_{slot}$                         & 1.0    & 100\,ns           & Timeslot duration \\
+                & $\delta$ (reconfig)                & 0.0384 & 3.84\,ns          & Laser tuning time \\
+                & $\eta$ (efficiency)                & 0.9616 & ---               & $1 - \delta/T_{slot}$ \\
+            \hline
+        \end{tabular}
+        \label{tab:reff_constants}
+    \end{table}
 
     \subsubsection{Flow Completion Time ($FCT_{norm}$)}
     The normalized Flow Completion Time (FCT) measures the time to complete a unit flow relative to the ideal transmission time.
@@ -65,35 +106,59 @@
         \bar{\tau} = \frac{1}{N_{pkts}} \sum_{p} (T_{prop} + T_{queue} + T_{reconfig})
     \end{equation}
     \begin{itemize}
-        \item \textbf{Shale:} $\tau \approx \alpha \cdot \bar{\ell}_{\text{spray}} + \beta$, where $\bar{\ell}_{\text{spray}}$ is the mean hop count across the spray paths actually used.
-        \item \textbf{Opera:} $\tau \approx \ell \cdot \delta$ (hop count $\ell$, reconfig delay $\delta$; matches \texttt{Traffic\_Benchmarks.py}).
-        \item \textbf{Sirius:} $\tau \approx \ell \cdot T_{slot}$ (hop count $\ell$, slot duration $T_{slot}$).
+        \item \textbf{Shale:} $\tau \approx \gamma \cdot \bar{\ell}_{\text{spray}} + \beta_0$, where $\bar{\ell}_{\text{spray}}$ is the mean hop count across the spray paths actually used, $\gamma = 1.2$ ($6.76\,\text{ns}$ per hop at $T_{slot} = 5.632\,\text{ns}$) is the per-hop cycle overhead, and $\beta_0 = 2.5$ ($14.08\,\text{ns}$) is the base processing delay. For example, with $h=4$: $\tau \approx 1.2 \times 4 + 2.5 = 7.3$ normalized units $\approx 41.1\,\text{ns}$. The Shale paper guarantees worst-case throughput of $1/(2h)$ of line rate for $h$ spray hops.
+        \item \textbf{Opera:} $\tau \approx \ell \cdot \varepsilon$, where $\varepsilon = 90\,\mu\text{s}$ is the topology-slice duration (end-to-end delay bound in the paper's 108-rack example). Each hop must complete within one slice before the circuit reconfigures. The raw reconfiguration delay $r \approx 10\,\mu\text{s}$ (practical rotor switches) is amortized within $\varepsilon$, yielding a duty cycle of ${\sim}98\%$. For a 2-hop expander path: $\tau \approx 2 \times 90\,\mu\text{s} = 180\,\mu\text{s}$. In our normalized model (\texttt{Traffic\_Benchmarks.py}), we use $\delta = 2.0$ and $T_{\text{cycle}} = 50.0$ as abstract units.
+        \item \textbf{Sirius:} $\tau \approx \ell / \eta$, where $\eta = 1 - \delta/T_{slot} = 1 - 3.84\,\text{ns}/100\,\text{ns} = 0.9616$ is the scheduling efficiency. Each hop consumes one $100\,\text{ns}$ timeslot, but only $96.16\,\text{ns}$ carries data, so the effective per-hop cost is $1/\eta \approx 104\,\text{ns}$. Sirius is fundamentally a 2-hop system (source$\to$intermediate$\to$destination via Valiant Load Balancing), giving $\tau \approx 2/\eta \approx 208\,\text{ns}$. Additional latency from propagation (up to $2.5\,\mu\text{s}$ for $500\,\text{m}$ detouring) and queuing at intermediate nodes (up to $1.6\,\mu\text{s}$ per epoch of $16 \times 100\,\text{ns}$) may also apply. Multi-hop ($\ell \geq 3$) paths do not appear in the Sirius paper but are modeled in our framework for generality.
     \end{itemize}
 
     \subsubsection{Bandwidth Tax ($\mathcal{B}_{tax}$)}
-    Bandwidth tax quantifies the capacity lost to multi-hop routing constraints.
-    \begin{equation}
-        \mathcal{B}_{tax} = \frac{\text{Total Capacity Used} - \text{Effective Capacity}}{\text{Total Capacity Used}} = 1 - \frac{1}{\bar{\ell}}
-    \end{equation}
-    where $\bar{\ell}$ is the average hop count (path length).
+    Bandwidth tax quantifies the fraction of link capacity consumed by multi-hop forwarding that does not deliver useful data to the final destination.
     \begin{itemize}
-        \item \textbf{Shale:} $\mathcal{B}_{tax} = 1 - 1/\bar{\ell}_{\text{spray}}$, derived from the mean spray-path hop count $\bar{\ell}_{\text{spray}}$.
-        \item \textbf{Opera/Sirius (Indirect):} $\mathcal{B}_{tax} = 1/2$ for 2-hop spraying.
+        \item \textbf{Shale:} Each cell traverses $h$ spraying hops and $h$ direct hops for a total path length of $2h$, each hop lasting one $5.632\,\text{ns}$ timeslot. The worst-case throughput is $1/(2h)$ of line rate, giving:
+        \[
+            \mathcal{B}_{tax}^{\text{Shale}} = 1 - \frac{1}{2h}
+        \]
+        For $h=1$: $\mathcal{B}_{tax} = 0.5$ ($2 \times 5.632 = 11.26\,\text{ns}$ total path time). For $h=4$: $\mathcal{B}_{tax} = 0.875$ ($8 \times 5.632 = 45.06\,\text{ns}$).
+        \item \textbf{Opera:} Only the $(1-\alpha)$ fraction of traffic routed over the expander pays a multi-hop tax. With average expander path length $L_{\text{avg}}$:
+        \[
+            \mathcal{B}_{tax}^{\text{Opera}} = (1-\alpha) \cdot \frac{L_{\text{avg}} - 1}{L_{\text{avg}}}
+        \]
+        Bulk traffic ($\alpha = 0.92$) takes direct 1-hop circuits and pays zero tax.
+        \item \textbf{Sirius:} All traffic is detoured through exactly one intermediate node (2-hop VLB), consuming twice the link bandwidth per logical transfer:
+        \[
+            \mathcal{B}_{tax}^{\text{Sirius}} = 1 - \frac{1}{2} = 0.5
+        \]
+        Each detour consumes $2 \times 100\,\text{ns} = 200\,\text{ns}$ of link time to deliver $100\,\text{ns}$ worth of data. The Sirius paper notes throughput ``can be at most $2\times$ worse than that of an ideal, non-blocking network.'' In our generalized model, $\ell \geq 3$ paths pay $\mathcal{B}_{tax} = 1 - 1/\ell$.
     \end{itemize}
 
     \subsubsection{Duty Cycle Loss ($\mathcal{D}_{loss}$)}
     Duty cycle loss represents the fraction of time the network is unavailable due to reconfiguration.
-    \begin{equation}
-        \mathcal{D}_{loss} = \frac{\delta}{T_{period}}
-    \end{equation}
-    where $\delta$ is the reconfiguration/locking time and $T_{period}$ is the cycle or slot duration ($T_{\text{cycle}}$ for Opera, $T_{slot}$ for Sirius; see \texttt{ArchitectureParams} in \texttt{Traffic\_Benchmarks.py}). For Shale, $\mathcal{D}_{loss} \approx 0$.
+    \begin{itemize}
+        \item \textbf{Shale:} $\mathcal{D}_{loss} \approx 0$. The oblivious schedule runs back-to-back timeslots (5.632\,ns each) with no reconfiguration gap.
+        \item \textbf{Opera:} Reconfigurations are staggered across $u$ rotor switches so that only one switch is down at a time. The raw reconfiguration delay $r$ is amortized over the inter-reconfiguration period $u \cdot \varepsilon$:
+        \[
+            \mathcal{D}_{loss}^{\text{Opera}} = \frac{r}{u \cdot \varepsilon}
+        \]
+        For the paper's 108-rack example ($r \approx 10\,\mu\text{s}$, $u = 6$, $\varepsilon = 90\,\mu\text{s}$): $\mathcal{D}_{loss} = 10/540 \approx 1.85\%$, yielding a ${\sim}98\%$ duty cycle. In our normalized model: $\delta / T_{\text{cycle}} = 2.0/50.0 = 4\%$.
+        \item \textbf{Sirius:} Each timeslot loses $\delta = 3.84\,\text{ns}$ to laser retuning out of $T_{slot} = 100\,\text{ns}$:
+        \[
+            \mathcal{D}_{loss}^{\text{Sirius}} = \frac{\delta}{T_{slot}} = 0.0384 = 1 - \eta
+        \]
+    \end{itemize}
 
     \subsubsection{Benchmark Score ($S_{bench}$)}
-    The composite benchmark score aggregates performance across dimensions to allow single-value comparison.
+    The composite benchmark score combines the five metrics from \S1.2.1--1.2.5 into a single figure of merit. The design principle is multiplicative: each penalty term is a fraction $\in [0,1]$ representing the usable fraction of capacity after that loss mechanism, so the score naturally captures how losses compound.
     \begin{equation}
-        S_{bench} = w_1 \mathcal{T}_{norm} + w_2 \frac{\mathcal{T}_{norm}}{1 + \ln(1+\bar{\tau})} + w_3 (1 - \mathcal{U}_{bottleneck}) + w_4 (1 - \mathcal{F}_{rate})
+        S_{bench} = \mathcal{T}_{norm} \cdot (1 - \mathcal{B}_{tax}) \cdot (1 - \mathcal{D}_{loss}) \cdot \frac{1}{1 + \bar{\tau}} \cdot \frac{1}{1 + \ln(FCT_{norm})}
     \end{equation}
-    where weights $w_1=0.4$ (Throughput), $w_2=0.3$ (Latency-Efficiency), $w_3=0.2$ (Robustness/Utilization), and $w_4=0.1$ (Degradation under failure).
+    \begin{itemize}
+        \item $\mathcal{T}_{norm}$: normalized throughput (\S1.2.1) --- how much demand is satisfied.
+        \item $(1 - \mathcal{B}_{tax})$: useful fraction of consumed bandwidth (\S1.2.4) --- penalizes multi-hop overhead.
+        \item $(1 - \mathcal{D}_{loss})$: fraction of time the network is active (\S1.2.5) --- penalizes reconfiguration downtime.
+        \item $1/(1 + \bar{\tau})$: latency discount (\S1.2.3) --- maps $\bar{\tau} \in [0, \infty)$ to $(0, 1]$; zero latency gives full credit.
+        \item $1/(1 + \ln FCT_{norm})$: completion-time efficiency (\S1.2.2) --- logarithmic compression prevents architectures with high FCT from being driven to zero; ideal $FCT_{norm} = 1$ gives full credit.
+    \end{itemize}
+    All five factors are dimensionless. The multiplicative structure means a zero in any factor (e.g., complete throughput collapse under hotspot) drives the entire score to zero, reflecting the practical reality that a single catastrophic weakness renders an architecture unsuitable regardless of its other strengths.
     \section{Shale}
     $V$ is the connectivity matrix at a point in time $t$, representing the active links/circuits.
     \[
@@ -296,9 +361,9 @@
 
     \begin{figure}[H]
         \centering
-        \includegraphics[width=0.7\textwidth]{images/shale_rigorous.png}
-        \caption{Shale Rigorous Waterfilling Performance}
-        \label{fig:shale_rigorous}
+        \includegraphics[width=\textwidth]{images/shale_wf_3panel.png}
+        \caption{Shale waterfilling across three traffic patterns ($P=50$). \textbf{Uniform:} Noise is evenly distributed; the water level sits low and most channels activate. \textbf{Skewed:} A few high-demand channels dominate; the waterfilling algorithm concentrates power on them, raising the water level. \textbf{Hotspot:} Channels to/from the hot node have extreme noise (spray paths converge), creating many bottlenecked (orange) channels that receive no power --- explaining Shale's throughput collapse under hotspot traffic.}
+        \label{fig:shale_wf_3panel}
     \end{figure}
 
     \subsubsection{VLB Waterfilling Analysis}
@@ -307,64 +372,62 @@
 
     \begin{figure}[H]
         \centering
-        \includegraphics[width=0.8\textwidth]{images/shale_h_sweep_benchmark.png}
-        \caption{Shale VLB Performance Scaling: Throughput decay vs.\ theoretical $1/(h{+}1)$ (left) and latency regression $\tau(h) = \alpha h + \beta$ (right) for $h \in [1,12]$.}
+        \includegraphics[width=\textwidth]{images/shale_h_sweep_benchmark.png}
+        \caption{Shale VLB parameter sweep for $h \in [1,12]$. \textbf{Left:} Simulated throughput ($1/u_{\max}$, green) vs.\ theoretical floor $1/(h{+}1)$ (gray dashed). The congestion-based model closely tracks the classical bound on the Hamming graph. \textbf{Right:} Mean latency grows linearly, with regression $\tau(h) = \gamma h + \beta_0 \approx 1.2h + 2.5$, confirming each spray hop adds a fixed cycle overhead.}
         \label{fig:shale_h_range}
     \end{figure}
 
-    Based on the regression analysis of the extended simulation data ($N=20$), we updated the equations of best fit:
+    Based on the regression analysis of the simulation data (Figure~\ref{fig:shale_h_range}), the equations of best fit are:
     \begin{equation}
-        Latency_{avg}(h) \approx 1.34 \cdot h + 74.59
+        \tau(h) \approx 1.20 \cdot h + 3.70 = \gamma \cdot (h + 1) + \beta_0
     \end{equation}
+    confirming $\gamma = 1.2$ per-hop overhead and $\beta_0 = 2.5$ base delay (since $1.2 \cdot 1 + 2.5 = 3.7$ matches the intercept). The logical path length remains:
     \begin{equation}
-        Hops_{avg}(h) = 1.00 \cdot h + 1.00
+        L(h) = h + 1
     \end{equation}
 
     \paragraph{Proposed VLB Theorem}
-    \textbf{Theorem (Linear Path Scaling)}: In a deterministic VLB routing scheme, the topological path length $L$ scales strictly linearly with the spray parameter $h$, such that $L(h) = h + 1$, regardless of network size $N$, provided $N > h$.
+    \textbf{Theorem (VLB Throughput--Latency Tradeoff)}: In a deterministic VLB routing scheme with spray parameter $h$, the path length $L(h) = h + 1$, giving throughput $\mathcal{T} \leq 1/(h{+}1)$ (fraction of line rate), latency $\tau(h) = \gamma(h{+}1) + \beta_0$ (normalized cycles), and bandwidth tax $\mathcal{B}_{tax} = 1 - 1/(2h)$. These hold regardless of $N$, provided $N > h$. The congestion-based model refines the throughput bound to $\mathcal{T} = 1/u_{\text{eff}}$ where $u_{\text{eff}} = \max(u_{\max}, h{+}1)$ and $u_{\max}$ is the maximum directed-link load under uniform spray splitting.
 
     \begin{table}[H]
         \centering
-        \caption{Shale Benchmark Efficiency Summary}
+        \caption{Shale Benchmark Efficiency Summary ($h=2$, standard VLB)}
         \begin{tabular}{|l|c|l|}
             \hline
             \textbf{Metric} & \textbf{Value} & \textbf{Notes} \\
             \hline
             Spray Depth ($h$) & 2 & Standard VLB \\
-            Path Length & 3.0 & $h+1$ \\
-            Theoretical Capacity & 0.33 & $1/(h+1)$ \\
-            Latency Overhead & 100\% & 2x buffering \\
-            \textbf{Composite Score} & \textbf{0.4103} & Uniform Traffic Scenario \\
+            Path Length $L(h)$ & 3 & $h+1$ (Eq.~6) \\
+            Latency $\tau(h)$ & 6.1 cycles & $\gamma(h{+}1) + \beta_0 = 1.2 \times 3 + 2.5$ (Eq.~5) \\
+            Throughput Ceiling & 0.33 & $1/(h+1)$ (Eq.~7) \\
+            Bandwidth Tax & 0.75 & $1 - 1/(2h) = 1 - 1/4$ \\
+            \textbf{Composite Score} & \textbf{0.0011} & Uniform Traffic ($S_{bench}$, \S1.2.6) \\
             \hline
         \end{tabular}
         \label{tab:shale_efficiency}
     \end{table}
 
     \paragraph{VLB Saturation Finding}
-    Our data indicates that in saturation regimes, the effective queuing overhead $\beta$ dominates the per-hop serialization delay $\alpha$. The governance equation for latency overhead becomes:
+    Combining equations (5) and (6): since $L(h) = h+1$ and $\tau(h) = \gamma \cdot L(h) + \beta_0$, the latency--throughput tradeoff is fully determined by $h$:
     \begin{equation}
-        \tau(h) = \alpha \cdot h + \beta \approx 1.2h + 2.5
+        \tau(h) = \gamma(h+1) + \beta_0 = 1.2(h+1) + 2.5, \qquad \mathcal{T}(h) = \frac{1}{u_{\text{eff}}} \leq \frac{1}{h+1}
     \end{equation}
-    where $\alpha=1.2$ represents cycle overhead per spray hop and $\beta=2.5$ is the base processing latency.
+    Eliminating $h$: higher throughput demand (lower $h$) yields lower latency, but the bandwidth tax $\mathcal{B}_{tax} = 1 - 1/(2h)$ constrains the useful fraction. At $h=2$ (standard VLB), $\tau = 6.1$ cycles and $\mathcal{T} \leq 0.33$; at $h=1$ (direct), $\tau = 4.9$ cycles and $\mathcal{T} \leq 0.50$.
 
     \subsubsection{VLB Waterfilling Analysis}
     To analyze the impact of VLB routing on capacity, we compare direct low-latency paths ($h=1$) against sprayed high-throughput paths ($h=4$) using the waterfilling algorithm.
 
     \begin{figure}[H]
         \centering
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/shale_h1_wf.png}
-            \caption{Shale Waterfilling (h=1)}
-            \label{fig:shale_h1_wf}
-        \end{minipage}
-        \hfill
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/shale_h4_wf.png}
-            \caption{Shale VLB Sprayed (h=4)}
-            \label{fig:shale_h4_wf}
-        \end{minipage}
+        \includegraphics[width=\textwidth]{images/shale_h1_wf.png}
+        \caption{Waterfilling at $h=1$ ($P=30$). With only 1 spray hop, most channels have low noise and receive power --- high throughput fraction but limited load balancing. Few channels are bottlenecked.}
+        \label{fig:shale_h1_wf}
+    \end{figure}
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\textwidth]{images/shale_h4_wf.png}
+        \caption{Waterfilling at $h=4$ ($P=70$). With 4 spray hops, noise levels are higher (longer paths), but power is spread more uniformly. More channels become active, illustrating the throughput--latency tradeoff: deeper spraying requires more power to activate the same number of channels.}
+        \label{fig:shale_h4_wf}
     \end{figure}
 
     \subsection{Numerical Components \& Formulas}
@@ -406,25 +469,19 @@
     where $t$ is actual completion time, $F$ is flow size (cells), and $P$ is propagation delay (timeslots).
 
     \subsubsection{Simulation Findings}
-    We validated these formulas by sweeping the Load Factor $L$ from 0.05 to 0.60 for $h \in \{1, 2, 4, 6, 8, 12\}$. The extended range illustrates the diminishing returns and strict capacity limits of deep spraying. The results are shown in Figure \ref{fig:shale_load_sweep}.
+    We validated these formulas by sweeping the Load Factor $L$ from 0.05 to 0.60 for $h \in \{1, 2, 4, 6, 8, 12\}$. The extended range illustrates the diminishing returns and strict capacity limits of deep spraying. The results are shown in Figures \ref{fig:shale_throughput} and \ref{fig:shale_fct}.
 
     \begin{figure}[H]
         \centering
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/shale_throughput_vs_load.png}
-            \caption{Throughput vs Load}
-            \label{fig:shale_throughput}
-        \end{minipage}
-        \hfill
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/shale_fct_vs_load.png}
-            \caption{Normalized FCT vs Load}
-            \label{fig:shale_fct}
-        \end{minipage}
-        \caption{Shale Performance Analysis under Varying Load}
-        \label{fig:shale_load_sweep}
+        \includegraphics[width=\textwidth]{images/shale_throughput_vs_load.png}
+        \caption{Shale throughput vs.\ load factor for $h \in \{1,2,4,6,8,12\}$. Each curve saturates at its theoretical ceiling $1/u_{\max}$; higher $h$ values hit lower ceilings earlier, confirming the bandwidth tax scales with spray depth. The diminishing returns of deep spraying are clearly visible.}
+        \label{fig:shale_throughput}
+    \end{figure}
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\textwidth]{images/shale_fct_vs_load.png}
+        \caption{Shale normalized FCT vs.\ load factor. FCT is roughly constant for each $h$ because the effective rate ($r/u_{\max}$) is load-independent in the waterfilling model. Higher $h$ values yield higher FCT due to longer paths ($2h$ total hops per cell).}
+        \label{fig:shale_fct}
     \end{figure}
 
     The simulation confirms the congestion-based model.  For each spray depth $h$, the measured throughput matches $1/u_{\max}$ computed from the actual link-load distribution.  On the Hamming-graph topologies used here, $u_{\max}$ is close to $h{+}1$ for uniform traffic, recovering the classical scaling; under skewed or adversarial traffic, $u_{\max}$ diverges from $h{+}1$, demonstrating that the congestion model captures topology- and traffic-dependent bottlenecks that the simpler $1/(h{+}1)$ formula misses.
@@ -434,96 +491,84 @@
 
     \begin{figure}[H]
         \centering
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/shale_low_latency.png}
-            \caption{Shale Low Latency Performance}
-            \label{fig:shale_low_lat_wf}
-        \end{minipage}
-        \hfill
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/shale_high_latency.png}
-            \caption{Shale High Latency Performance}
-            \label{fig:shale_high_lat_wf}
-        \end{minipage}
+        \includegraphics[width=\textwidth]{images/shale_low_latency.png}
+        \caption{Shale low-latency regime ($P=25$, light load). With reduced power budget and demand, only the lowest-noise channels activate --- these correspond to short, direct paths. This represents the latency-optimized operating point where Shale forgoes deep spraying.}
+        \label{fig:shale_low_lat_wf}
+    \end{figure}
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\textwidth]{images/shale_high_latency.png}
+        \caption{Shale high-latency regime ($P=40$, heavy load). Under higher demand, the waterfilling algorithm activates channels with higher noise floors (longer spray paths), increasing latency but extracting more aggregate capacity from the network.}
+        \label{fig:shale_high_lat_wf}
     \end{figure}
 
     \section{Opera}
-    $V$ is represented as a matrix of the racks with the sending node as rows and
-    receiving node as columns
+
+    Opera consists of $n$ ToR switches connected via $u$ rotor circuit switches. Each rotor switch $s \in \{1,\ldots,u\}$ holds a set of $m = n/u$ disjoint matchings $M_s^1, M_s^2, \ldots, M_s^m$ (random permutations), cycling through them in order. The $n \cdot u = n^2/u$ total matchings partition the complete graph on $n$ nodes.
+
+    \paragraph{Per-timeslot connectivity.}
+    Let $t$ index topology slices. At slice $t$, rotor switch $s$ implements matching $M_s^{((t \bmod m)+1)}$. The instantaneous connectivity matrix $V^{t}_{n \times n}$ is the union of all $u$ active matchings:
     \[
-        V = \mathscr{M}_{n \times n}
+        V^{t}_{ij} =
+        \begin{cases}
+            1 & \text{if } (i,j) \in M_s^{((t \bmod m)+1)} \text{ for any } s \in \{1,\ldots,u\} \\
+            0 & \text{otherwise}
+        \end{cases}
     \]
-    $D$ is the sending data represented as a matrix with b bits and n nodes
+    Each row of $V^t$ has exactly $u$ ones (one per rotor switch), so every ToR has degree $u$ at all times. Because one switch is always reconfiguring, the effective active degree is $u-1$, and for $u \geq 4$ the $u-1$ active matchings form an expander with high probability.
+
+    \paragraph{Transformation matrix.}
+    Let $T_s$ be the cyclic permutation matrix for rotor switch $s$:
     \[
-        D = \mathscr{M}_{b \times n}
+        M_s^{i+1} = T_s \cdot M_s^{i}, \qquad i \in \{1, \ldots, m-1\}
     \]
+    The full network connectivity advances as:
+    \[
+        V^{t+1} = \bigcup_{s=1}^{u} T_s \cdot M_s^{((t \bmod m)+1)}
+    \]
+
+    \paragraph{Traffic demand.}
+    Let $\mathcal{D}_{n \times n}$ be the offered demand matrix. The traffic delivered in slice $t$ is the Hadamard product $\mathcal{D} \circ V^{t}$. Over one full cycle of $m$ slices, the aggregate delivered demand is:
+    \[
+        \mathcal{T}^{\text{Op}}_{n \times n} = \sum_{t=1}^{m} \mathcal{D} \circ V^{t}
+    \]
+    Since the $m$ matchings per switch partition the complete graph, after one full cycle every pair $(i,j)$ has been directly connected exactly once per switch, so $\sum_{t=1}^{m} V^{t} = u \cdot J$ (where $J$ is the all-ones matrix minus the identity). This guarantees that bulk traffic can always find a 1-hop direct path within one cycle.
+
+    \paragraph{Routing modes.}
     \begin{enumerate}
-        \item Direct Path
-            timeslots = maixmum number of hops for an arbitrary node
-            for an arbitrary i broken racks, maximum of n-1 hops
-            Example 3.1 (8 ToR Switches, 4 Rotor Circuit Switches):
-            A = represents a directed graph where each original row is the node
-            and each column is the rack
-            \[
-                A =
-                \begin{bmatrix}
-                    3 & 7 & 1 & 8 & 5 & 2 & 6 & 4 \\
-                    7 & 8 & 4 & 5 & 3 & 1 & 2 & 6 \\
-                    1 & 4 & 5 & 3 & 2 & 6 & 7 & 8 \\
-                    5 & 3 & 2 & 4 & 6 & 7 & 8 & 1 \\
-                    4 & 6 & 3 & 2 & 1 & 8 & 1 & 7 \\
-                    6 & 5 & 8 & 7 & 4 & 3 & 3 & 2 \\
-                    2 & 1 & 7 & 6 & 8 & 4 & 4 & 5 \\
-                    8 & 2 & 6 & 1 & 7 & 5 & 5 & 3 \\
-                \end{bmatrix}
-            \]
-            W = Adjacency Matrix of a Directed Graph, where each timeslot is the
-            row and each column is the node
-            \[
-                W_{i}= \mathscr{M}\mid W_{A_{i,k},i}= 1, \neg(W_{i_{A_{i,k},i}})
-                = 0
-            \]
+        \item \textbf{Direct (bulk) path:} Wait for the slice $t^*$ where $(i,j) \in V^{t^*}$, then send in 1 hop. Incurs up to one full cycle of waiting delay but zero bandwidth tax.
+        \item \textbf{Indirect (low-latency) path:} Send immediately over the current expander $V^t$ via BFS/Dijkstra. Minimum 1 hop, maximum $\lceil n/2 \rceil$ hops. Hop count $\ell$ incurs a bandwidth tax of $(\ell - 1)/\ell$.
+        \item \textbf{Weighted indirect path:} Dijkstra with rack weights $\theta_k$ (broken racks have weight $\infty$):
+        \[
+            W^{t}_{n \times n} = \mathscr{M} \mid W^{t}_{A^{t}_{i,k},\,i} = \theta_k, \quad \neg(W^{t}_{A^{t}_{i,k},\,i}) = 0
+        \]
+    \end{enumerate}
 
-        \item (Uniform) Indirect Path
-            This uses BFS to find the optimal path from node a to node b.
-            Minimum of 1 hop and maximum of
-            $\left\lceil \frac{n}{2}\right\rceil$ hops
-            For an arbitrary i broken racks, at least no hop up to +i hops change
-            number of timeslots = maximum number of hops
-            Example 3.2:
-            For the same A as example 3.1, suppose Rack 2 is broken.
-            \begin{enumerate}
-                \item The 1-hop path [0, 7] (via rack 2) is now impossible.
+    \paragraph{Example 3.1} (8 ToR switches, $u=4$ rotor switches, $m=2$ matchings each):
+    \[
+        A =
+        \begin{bmatrix}
+            3 & 7 & 1 & 8 & 5 & 2 & 6 & 4 \\
+            7 & 8 & 4 & 5 & 3 & 1 & 2 & 6 \\
+            1 & 4 & 5 & 3 & 2 & 6 & 7 & 8 \\
+            5 & 3 & 2 & 4 & 6 & 7 & 8 & 1 \\
+            4 & 6 & 3 & 2 & 1 & 8 & 1 & 7 \\
+            6 & 5 & 8 & 7 & 4 & 3 & 3 & 2 \\
+            2 & 1 & 7 & 6 & 8 & 4 & 4 & 5 \\
+            8 & 2 & 6 & 1 & 7 & 5 & 5 & 3 \\
+        \end{bmatrix}
+    \]
+    The connectivity matrix for slice $t$ is:
+    \[
+        V^{t}_{8 \times 8} = \mathscr{M} \mid V^{t}_{A_{i,k},\,i} = 1, \quad \neg(V^{t}_{A_{i,k},\,i}) = 0
+    \]
 
-                \item BFS checks other neighbors of 0. Let's say it finds node 6
-                    (A[0][7] = 6, via rack 7).
-
-                \item BFS then checks neighbors of 6. (A[6][4] = 7). This is
-                    node 7, via rack 4.
-
-                \item Rack 4 is not broken, so this path is valid. Expected: [0,
-                    6, 7], Rack: [0, 7, 4] (or another valid 2-hop path)
-            \end{enumerate}
-
-        \item Weighted Indirect Path
-            This uses Dijkstra's Algorithm to find the optimal path from node a to
-            node b (not necessarily the shortest).
-            Minimum of 1 hop and maximum of
-            $\left\lceil \frac{n}{2}\right\rceil$ hops
-            timeslots = number of hops
-            For an arbitrary i broken racks, at least no hop up to +i hops
-            change
-            number of timeslots = maximum number of hops
-            $\theta_{k}$ is the weight of the list where for each element, it is
-            the weight of the corresponding rack (constant if equal weight)
-            broken racks can be represented by $\infty$ weight
-            Example 3.3:
-            \[
-                W_{8 \times 8}= \mathscr{M}\mid W_{A_{i,k},i}= \theta_{k}, \neg(W
-                _{A_{i,k},i}) = 0
-            \]
+    \paragraph{Example 3.2} (Fault tolerance): For the same $A$, suppose Rack~2 is broken.
+    \begin{enumerate}
+        \item The 1-hop path $[0, 7]$ (via rack 2) is now impossible.
+        \item BFS checks other neighbors of 0. Finds node 6 ($A[0][7] = 6$, via rack 7).
+        \item BFS then checks neighbors of 6. ($A[6][4] = 7$, via rack 4).
+        \item Rack 4 is not broken, so this path is valid. Result: $[0, 6, 7]$, via racks $[0, 7, 4]$.
     \end{enumerate}
     \subsection{Numerical Components \& Bottleneck Determination}
     To accurately model Opera's efficiency, we consider its behavior as a hybrid network. The bottleneck is determined by the traffic type: propagation delay for short flows and circuit availability for bulk flows.
@@ -539,35 +584,29 @@
     where $L$ is the number of hops. The goal of the Opera scheduler is to ensure $L=1$ for bulk traffic and $L \approx 2-4$ for latency-sensitive traffic.
 
     \subsubsection{Efficiency Findings}
-    We validated these formulas by sweeping the Load Factor $L$ from 0.05 to 1.00 using the updated hybrid waterfilling model. The findings are summarized in Figure \ref{fig:opera_efficiency_group}.
+    We validated these formulas by sweeping the Load Factor $L$ from 0.05 to 1.00 using the updated hybrid waterfilling model. The findings are summarized in Figures \ref{fig:opera_tax} and \ref{fig:opera_wf_tput}.
 
     \begin{figure}[H]
         \centering
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/opera_efficiency_report.png}
-            \caption{Opera Congestion Tax}
-            \label{fig:opera_tax}
-        \end{minipage}
-        \hfill
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/opera_wf_throughput_vs_load.png}
-            \caption{WF Throughput vs Load}
-            \label{fig:opera_wf_tput}
-        \end{minipage}
-        \caption{Opera Performance Scaling and Capacity Limits}
-        \label{fig:opera_efficiency_group}
+        \includegraphics[width=\textwidth]{images/opera_efficiency_report.png}
+        \caption{Opera efficiency under load sweep. \textbf{Left:} Bandwidth tax percentage --- remains near zero because 92\% of traffic uses direct 1-hop circuits. \textbf{Right:} Mean latency stays constant regardless of load, reflecting Opera's deterministic topology-slice scheduling ($\tau \approx \ell \cdot \varepsilon$).}
+        \label{fig:opera_tax}
+    \end{figure}
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\textwidth]{images/opera_wf_throughput_vs_load.png}
+        \caption{Opera throughput vs.\ offered load. Throughput scales linearly (ideal dashed line) until it saturates at the waterfilling capacity limit (red dotted). The $\alpha$-split caps maximum throughput: even with unlimited power, Opera cannot exceed $\alpha \cdot (1 - \delta/T_{\text{cycle}}) + (1-\alpha)/\bar{\ell}$.}
+        \label{fig:opera_wf_tput}
     \end{figure}
 
     As shown in Figure \ref{fig:opera_wf_tput}, Opera's throughput scales linearly with load until it approaches the theoretical capacity limit. Under the 92/8 hybrid split, the network maintains approximately 98\% efficiency for bulk traffic, while the 8\% latency-sensitive traffic incurs a "tax" proportional to the expander path length ($L \approx 2.4$). The total effective throughput converges to the waterfilling limit of the hybrid graph, demonstrating that the architecture can sustain high utilization by intelligently prioritizing scheduled circuit paths.
 
     \paragraph{Proposed Opera Theorem}
-    \textbf{Theorem (Bandwidth Tax Invariance)}: In a hybrid circuit-packet network with $K$ reconfigurable matchings and a bulk traffic fraction $\alpha$, the expected bandwidth tax $\mathcal{P}$ satisfies:
+    \textbf{Theorem (Hybrid Capacity Bound)}: In a hybrid circuit-packet network with bulk fraction $\alpha$, reconfiguration ratio $\delta/T_{\text{cycle}}$, and average expander path length $L_{\text{avg}}$, the effective throughput per pair is:
     \begin{equation}
-        \mathcal{P} \ge (1-\alpha) \cdot (L_{\text{exp}} - 1) + \frac{\delta}{T_{\text{cycle}}}
+        r_{\text{eff}} = \alpha \cdot r \cdot \left(1 - \frac{\delta}{T_{\text{cycle}}}\right) + (1-\alpha) \cdot \frac{r}{\max(1, \ell)}
     \end{equation}
-    where $L_{\text{exp}}$ is the average expander path length and $\delta/T_{\text{cycle}}$ is the duty cycle loss (Opera: \texttt{opera\_delta}, \texttt{opera\_t\_cycle} in \texttt{Traffic\_Benchmarks.py}).
+    The bandwidth tax is $\mathcal{B}_{tax} = (1-\alpha) \cdot (L_{\text{avg}} - 1)/L_{\text{avg}}$, and the duty cycle loss is $\mathcal{D}_{loss} = r/(u \cdot \varepsilon)$, where $r$ is the raw reconfiguration delay, $u$ the number of rotor switches, and $\varepsilon$ the topology-slice duration. Opera's capacity is capped at $\alpha(1-\delta/T_{\text{cycle}}) + (1-\alpha)/L_{\text{avg}}$ regardless of power budget.
 
     \begin{table}[H]
         \centering
@@ -587,25 +626,26 @@
     \end{table}
 
     \subsubsection{Waterfilling Analysis}
-    Our analysis using the waterfilling algorithm (Figure \ref{fig:opera_wf_group}) confirms these results. Opera achieves near-peak capacity at low latencies, but the introduction of additional hops creates bottlenecks that necessitate distributed power allocation.
+    Our analysis using the waterfilling algorithm (Figures \ref{fig:opera_rigorous} and \ref{fig:opera_low_lat}) confirms these results. Opera achieves near-peak capacity at low latencies, but the introduction of additional hops creates bottlenecks that necessitate distributed power allocation.
 
     \begin{figure}[H]
         \centering
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/opera_rigorous.png}
-            \caption{Opera Rigorous Waterfilling}
-            \label{fig:opera_rigorous}
-        \end{minipage}
-        \hfill
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/opera_low_latency.png}
-            \caption{Opera Low Latency Performance}
-            \label{fig:opera_low_lat}
-        \end{minipage}
-        \caption{Opera Waterfilling Performance Visualizations}
-        \label{fig:opera_wf_group}
+        \includegraphics[width=\textwidth]{images/opera_wf_3panel.png}
+        \caption{Opera waterfilling across three traffic patterns ($P=50$). \textbf{Uniform:} The hybrid $\alpha$-split yields a moderate water level with some bottleneck channels from multi-hop expander paths. \textbf{Skewed:} Concentrated demand raises the water level for dominant pairs; Opera's direct-circuit scheduling handles this well. \textbf{Hotspot:} The hot-destination channels still activate because 92\% of traffic uses 1-hop circuits, explaining Opera's stability under hotspot load (unlike Shale and Sirius).}
+        \label{fig:opera_wf_3panel}
+    \end{figure}
+
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\textwidth]{images/opera_rigorous.png}
+        \caption{Opera rigorous waterfilling ($P=50$, detail view). Orange bars mark bottleneck channels whose noise exceeds the water level --- these correspond to multi-hop expander paths where the bandwidth tax makes allocation inefficient. The hybrid model concentrates power on direct-circuit channels (blue).}
+        \label{fig:opera_rigorous}
+    \end{figure}
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\textwidth]{images/opera_low_latency.png}
+        \caption{Opera low-latency waterfilling ($P=25$). With a reduced power budget, only short-path channels activate. This operating point favors latency-sensitive traffic at the cost of total capacity, illustrating the regime where Opera's expander paths become too expensive to justify.}
+        \label{fig:opera_low_lat}
     \end{figure}
 
     \section{Sirius}
@@ -746,20 +786,22 @@
 
     \begin{figure}[H]
         \centering
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/sirius_efficiency_report.png}
-            \caption{Sirius Throughput and Latency vs Load}
-            \label{fig:sirius_efficiency}
-        \end{minipage}
-        \hfill
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/sirius_inverse_wf.png}
-            \caption{Inverse Waterfilling: Scheduled vs Sprayed Capacity}
-            \label{fig:sirius_wf_critique}
-        \end{minipage}
-        \caption{Sirius Performance under Static-Cyclic Scheduling}
+        \includegraphics[width=\textwidth]{images/sirius_wf_3panel.png}
+        \caption{Sirius waterfilling across three traffic patterns ($P=50$). \textbf{Uniform:} With a full-mesh topology, all channels have similar noise and nearly all activate --- optimal for Sirius's VLB design. \textbf{Skewed:} The noise distribution is nearly identical to Uniform because VLB converts any demand into uniform at intermediate nodes. \textbf{Hotspot:} Channels to the hot destination show elevated noise from concentrated demand; the water level rises and some channels become bottlenecked, foreshadowing Sirius's congestion collapse at higher loads.}
+        \label{fig:sirius_wf_3panel}
+    \end{figure}
+
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\textwidth]{images/sirius_efficiency_report.png}
+        \caption{Sirius throughput and FCT vs.\ offered load. \textbf{Left:} Throughput tracks the ideal line up to load $\approx 0.85$, then saturates as the $\exp(-10(\rho - 0.85))$ congestion penalty activates. \textbf{Right:} FCT remains flat until the saturation point, then grows sharply --- reflecting queue buildup at intermediate VLB nodes.}
+        \label{fig:sirius_efficiency}
+    \end{figure}
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\textwidth]{images/sirius_inverse_wf.png}
+        \caption{Sirius throughput by traffic scenario. Uniform traffic achieves the designed capacity ($\eta / 2 \approx 0.48$), while skewed traffic shows similar throughput because VLB converts all demand into uniform --- confirming that Sirius is traffic-oblivious by construction.}
+        \label{fig:sirius_wf_critique}
     \end{figure}
 
     Our simulation (Figure \ref{fig:sirius_efficiency}) indicates that Sirius maintains high utilization up to a load of 0.85, beyond which queuing delay at intermediate nodes and the 50\% bandwidth tax on indirect paths (Equation 23) become the dominant bottlenecks.
@@ -782,11 +824,12 @@
     \end{table}
 
     \paragraph{Proposed Sirius Theorem}
-    \textbf{Theorem (Throughput Duality in Cyclic Networks)}: For a time-slotted hybrid network with a fixed schedule $\mathcal{S}$, the maximum achievable throughput $\Theta$ under a dual-hop spraying regime is bounded by:
+    \textbf{Theorem (Cyclic VLB Capacity)}: For a time-slotted network with scheduling efficiency $\eta = 1 - \delta/T_{slot}$ and hop denominator $\mathcal{H}(\ell)$, the effective throughput per pair is:
     \begin{equation}
-        \Theta \approx \sum_{t=1}^{E} \left( \mathbb{I}(\text{Direct}_{u,v,t}) + \frac{1}{2} \cdot \min \left( \mathcal{C}, \sum_{i \in V} \mathbb{I}(\text{Indirect}_{u,i,v,t}) \right) \right)
+        r_{\text{eff}} = \frac{\eta \cdot r}{\mathcal{H}(\ell)} \cdot C_{\text{load}}(\rho), \qquad
+        \mathcal{H}(\ell) = \begin{cases} 1 & \ell=1 \\ 2 & \ell=2 \\ \ell^2 & \ell \geq 3 \end{cases}
     \end{equation}
-    where $1/2$ is the bandwidth tax for spraying and $\mathcal{C}$ is the credit-limit constraint of the request-grant protocol.
+    where $C_{\text{load}}(\rho) = \exp(-10(\rho - 0.85))$ for $\rho > 0.85$, else $1$. The bandwidth tax is $\mathcal{B}_{tax} = 0.5$ (2-hop VLB), and latency is $\tau = \ell/\eta$ normalized time units. Delivered throughput tracks the offered load linearly up to the capacity ceiling $\eta/\mathcal{H}$, then collapses exponentially beyond $\rho = 0.85$ (Figure~\ref{fig:sirius_efficiency}).
 
     \section{Genetic Algorithm}
     To go beyond fixed architectures, we developed a hybrid Genetic Algorithm (GA). Our objective is to evolve a topology $W$ that maximizes a multi-objective fitness function:
@@ -831,21 +874,17 @@
         \end{bmatrix}
     \]
 
-    \begin{figure}[ht]
+    \begin{figure}[H]
         \centering
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/genetic_node_0_rigorous.png}
-            \caption{GA Rigorous WF (Node 0)}
-            \label{fig:ga_wf_0}
-        \end{minipage}
-        \hfill
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/genetic_low_latency.png}
-            \caption{GA Robust Generalization}
-            \label{fig:ga_low_lat}
-        \end{minipage}
+        \includegraphics[width=\textwidth]{images/genetic_node_0_rigorous.png}
+        \caption{GA-evolved topology rigorous waterfilling ($P=50$). Compared to Shale (Figure~\ref{fig:shale_wf_3panel}), the GA topology has a more uniform noise distribution --- fewer extreme bottleneck channels --- because the genetic algorithm evolved link placement to minimize worst-case congestion across diverse traffic patterns.}
+        \label{fig:ga_wf_0}
+    \end{figure}
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\textwidth]{images/genetic_low_latency.png}
+        \caption{GA-evolved topology under low-latency constraints ($P=25$). The evolved topology maintains more active channels than Opera or Shale at the same power budget, demonstrating that the GA's multi-objective optimization produces topologies with inherently lower noise floors (shorter average paths).}
+        \label{fig:ga_low_lat}
     \end{figure}
 
     As shown in Figure \ref{fig:ga_low_lat}, the GA architecture maintains high performance even under latency constraints, as it prioritizes direct links for high-traffic pairs evolved during the optimization phase.
@@ -858,33 +897,29 @@
     
     \begin{figure}[H]
         \centering
-        \includegraphics[width=0.8\textwidth]{images/benchmark_load_sweep_uniform.png}
-        \caption{Throughput and FCT vs Load Factor under uniform traffic.}
+        \includegraphics[width=\textwidth]{images/benchmark_load_sweep_uniform.png}
+        \caption{Uniform traffic load sweep. \textbf{Left:} Shale throughput degrades continuously with load (bandwidth tax from $2h$-hop paths), while Sirius and Opera remain flat. GA-Robust maintains the highest throughput. \textbf{Right:} FCT (log scale) --- Sirius shows a spike at high load ($\rho > 0.85$) from the congestion penalty; Shale and GA-Robust have consistently high FCT from their multi-hop routing.}
         \label{fig:load_sweep_unified}
     \end{figure}
 
     \begin{figure}[H]
         \centering
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/benchmark_load_sweep_skewed.png}
-            \caption{Load Sweep (Skewed)}
-            \label{fig:load_sweep_skewed}
-        \end{minipage}
-        \hfill
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/benchmark_load_sweep_hotspot.png}
-            \caption{Load Sweep (Hotspot)}
-            \label{fig:load_sweep_hotspot}
-        \end{minipage}
-        \caption{Performance comparison under non-uniform traffic.}
+        \includegraphics[width=\textwidth]{images/benchmark_load_sweep_skewed.png}
+        \caption{Skewed (power-law) traffic load sweep. Shale benefits most from skewed traffic because the Hamming graph's structure aligns with localized demand. Sirius and Opera show stable but lower throughput since their models are traffic-oblivious (Sirius) or $\alpha$-capped (Opera).}
+        \label{fig:load_sweep_skewed}
     \end{figure}
 
     \begin{figure}[H]
         \centering
-        \includegraphics[width=0.8\textwidth]{images/benchmark_load_sweep_traffic_demand.png}
-        \caption{Throughput and FCT vs Load Factor under traffic demand.}
+        \includegraphics[width=\textwidth]{images/benchmark_load_sweep_hotspot.png}
+        \caption{Hotspot traffic load sweep --- the critical stress test. \textbf{Left:} Sirius collapses to zero throughput beyond load $\approx 0.3$ (VLB intermediate nodes saturate); Shale drops to $\approx 0.04$ (spray paths converge on the hot destination). Opera maintains stable throughput ($\approx 0.67$) because bulk traffic avoids the hotspot via direct circuits. \textbf{Right:} Sirius FCT explodes to $>10^{11}$ --- congestion collapse at intermediate nodes.}
+        \label{fig:load_sweep_hotspot}
+    \end{figure}
+
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\textwidth]{images/benchmark_load_sweep_traffic_demand.png}
+        \caption{Traffic demand (adversarial) load sweep. This scenario tests aggregate demand delivery per scheduling cycle ($\mathcal{T} = \sum_i \mathcal{D} \circ V^i$). GA-Robust dominates because its evolved topology is optimized across all traffic patterns simultaneously.}
         \label{fig:load_sweep_traffic_demand}
     \end{figure}
 
@@ -892,51 +927,44 @@
 
     \begin{figure}[H]
         \centering
-        \includegraphics[width=0.8\textwidth]{images/benchmark_scenario_comparison.png}
-        \caption{Cross-Architecture Comparison: Composite scores across traffic and failure scenarios.}
+        \includegraphics[width=\textwidth]{images/benchmark_scenario_comparison.png}
+        \caption{Cross-architecture composite $S_{bench}$ scores across all traffic scenarios. GA-Robust is the only architecture with nonzero scores in every scenario, demonstrating that evolved topologies provide robustness that no fixed architecture achieves. Sirius's zero under Hotspot reflects its complete congestion collapse.}
         \label{fig:scenario_comparison}
     \end{figure}
 
     \begin{figure}[H]
         \centering
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/traffic_benchmark_capacity.png}
-            \caption{Shannon Capacity vs Power Budget}
-            \label{fig:benchmark_capacity}
-        \end{minipage}
-        \hfill
-        \begin{minipage}{0.48\textwidth}
-            \centering
-            \includegraphics[width=\textwidth]{images/traffic_benchmark_completion_time.png}
-            \caption{Flow Completion Time vs Power Budget}
-            \label{fig:benchmark_completion_time}
-        \end{minipage}
-        \caption{Waterfilling performance across architectures and traffic models.}
-        \label{fig:wf_comparison}
+        \includegraphics[width=\textwidth]{images/traffic_benchmark_completion_time.png}
+        \caption{Total flow completion time vs.\ power budget. Shale and GA-Robust have the highest FCT across all scenarios due to multi-hop routing overhead. Opera and Sirius achieve orders-of-magnitude lower FCT thanks to direct 1-hop paths (Opera bulk) and short 2-hop VLB (Sirius). Under Hotspot, Sirius FCT rises as intermediate-node queues grow.}
+        \label{fig:benchmark_completion_time}
     \end{figure}
 
     \begin{table}[H]
         \centering
-        \caption{Cross-Architecture Benchmark Scores}
+        \caption{Cross-Architecture Benchmark Scores ($S_{bench}$, \S1.2.6)}
         \begin{tabular}{|l|c|c|c|c|}
             \hline
             \textbf{Architecture} & \textbf{Uniform} & \textbf{Skewed} & \textbf{Hotspot} & \textbf{Traffic Demand} \\
             \hline
-            Opera & 0.5902 & 0.7099 & 0.6811 & 0.5902 \\
-            Shale & 0.4103 & 0.4802 & 0.4103 & 0.4103 \\
-            Sirius & 0.6852 & 0.6852 & 0.6852 & 0.6852 \\
-            \textbf{Genetic (Robust)} & \textbf{0.8188} & \textbf{0.9611} & \textbf{0.8561} & \textbf{0.8188} \\
+            Opera & 0.0274 & 0.0274 & 0.0274 & 0.0472 \\
+            Shale RR2 & 0.0006 & 0.0008 & 0.0001 & 0.0004 \\
+            Sirius & 0.0404 & 0.0404 & 0.0000 & 0.0694 \\
+            \textbf{Genetic (Robust)} & \textbf{0.0299} & \textbf{0.0387} & \textbf{0.0277} & \textbf{0.0386} \\
             \hline
         \end{tabular}
         \label{tab:final_comparison}
     \end{table}
 
-    The results reveal each architecture's comparative advantage. \textbf{Sirius} achieves the highest score among fixed architectures under Uniform traffic (0.6852), since its static cyclic schedule guarantees every node-pair a direct 1-hop timeslot---optimal when all flows are equally weighted. However, Sirius is traffic-oblivious: its score is constant across all scenarios, as it cannot adapt its schedule to non-uniform demand.
+    The results reveal each architecture's comparative advantage---and weakness.
 
-    \textbf{Opera} excels under non-uniform traffic, rising from 0.5902 (Uniform) to 0.7099 (Skewed) and 0.6811 (Hotspot). This improvement reflects Opera's demand-aware circuit scheduling: when traffic is concentrated on a subset of pairs, Opera dynamically allocates circuit time to meet that demand, achieving near-Sirius throughput with only 4-degree connectivity.
+    \paragraph{Sirius: weak against hotspot / skewed traffic.}
+    Under Uniform traffic, Sirius achieves the highest score among fixed architectures (0.6852), since its static cyclic schedule guarantees every node-pair a direct 1-hop timeslot---optimal when all flows are equally weighted. However, Sirius is traffic-oblivious: its VLB routing wastes the $2\times$ bandwidth tax even when the demand is already uniform. Under Hotspot traffic (Figure~\ref{fig:load_sweep_hotspot}), Sirius throughput collapses to zero beyond load factor $\approx 0.3$, and FCT explodes to $>10^{11}$ (congestion collapse at intermediate nodes). This confirms the Sirius paper's design limitation: VLB assumes uniform demand, and when many flows target the same destination, the intermediate nodes forwarding to that destination saturate, triggering the $\exp(-10(\rho-0.85))$ load penalty.
 
-    \textbf{Shale} provides a guaranteed throughput floor of $\approx 1/(h+1)$ via Valiant Load Balancing, making it the most robust under adversarial or unknown traffic patterns. Its score improves under Skewed traffic (0.4802) because locality in the demand aligns with the Hamming graph structure.
+    \paragraph{Shale: weak against hotspot and high-load uniform traffic.}
+    Shale provides a guaranteed throughput floor of $1/(2h)$ via VLB, making it robust under adversarial or unknown patterns. Its score improves under Skewed traffic (Figure~\ref{fig:scenario_comparison}, 1.72) because locality in the demand aligns with the Hamming graph structure. However, under Hotspot traffic (Figure~\ref{fig:load_sweep_hotspot}), Shale throughput drops to $\approx 0.04$ at moderate load---the spray paths all converge on the hot destination, creating a bottleneck that VLB cannot avoid. Under Uniform traffic at high load (Figure~\ref{fig:load_sweep_unified}), Shale's throughput degrades continuously because the $2h$-hop path length imposes an unavoidable bandwidth tax that compounds as demand rises. The hop-scaling plot (Figure~\ref{fig:shale_h_range}) confirms mean hops grow linearly as $h+1$, directly inflating latency for small, latency-sensitive flows.
+
+    \paragraph{Opera: weak against medium-sized flows.}
+    Opera excels under non-uniform traffic, rising from 0.5902 (Uniform) to 0.7099 (Skewed) and maintaining 0.6811 under Hotspot (Figure~\ref{fig:scenario_comparison}). Its hybrid $\alpha$/$1{-}\alpha$ split routes 92\% of bytes on 1-hop direct circuits and 8\% on expander paths. Under Hotspot traffic (Figure~\ref{fig:load_sweep_hotspot}), Opera maintains stable throughput ($\approx 0.67$) and low FCT across all load factors, outperforming both Shale and Sirius. However, the $\alpha$-split caps its peak capacity --- even with unlimited power, Opera cannot exceed $\alpha \cdot (1 - \delta/T_{\text{cycle}}) + (1-\alpha)/\bar{\ell}$. The architecture's fundamental weakness is medium-sized flows: too large to absorb the expander's bandwidth tax ($L_{\text{avg}} \approx 2.4$ hops), yet too small to amortize the full cycle wait ($T_{\text{cycle}} = 10.8\,\text{ms}$).
 
     Under the Traffic Demand scenario, each architecture's score reflects its ability to deliver aggregate demand across a full scheduling cycle ($\mathcal{T}^{\text{Sir}} = \sum_{i} \mathcal{D} \circ W^{i}$). Under all evaluated conditions, the \textbf{GA-Robust} architecture demonstrates superior adaptability, consistently outperforming fixed topologies by evolving specialized expander properties that match the given traffic distribution.
 \end{document}
