@@ -18,7 +18,13 @@
     \subsection{Benchmark Scenario}
     The network is stressed under various traffic models and failure conditions:
     \begin{itemize}
-        \item \textbf{Traffic Models}: Uniform (baseline), Skewed (power-law distribution), Hotspot (concentrated demand), and Adversarial (bottleneck-maximizing).
+        \item \textbf{Traffic Models} (implemented in \texttt{Traffic\_Benchmarks.py}): Demand matrix $D[i,j]$ for $i \neq j$; $D[i,i]=0$.
+            \begin{itemize}
+                \item \textbf{Uniform}: $D[i,j] = 1$ (all pairs equal).
+                \item \textbf{Skewed}: $D[i,j] = 1 / (|i - j|^\gamma + 1)$, $\gamma$ skew exponent (default 2.0).
+                \item \textbf{Hotspot}: $D[i,j] = \omega$ if $i \in \mathcal{H}$ or $j \in \mathcal{H}$, else $1$; $\mathcal{H}$ hotspot nodes, $\omega$ intensity (e.g.\ 10).
+                \item \textbf{Adversarial}: $D[i, j(i)] = N$ for $j(i) = (i + \lfloor N/2 \rfloor) \bmod N$, $i \neq j(i)$; all other entries $0$.
+            \end{itemize}
         \item \textbf{Load Factor Sweep}: We sweep the load $L$ from light load (0.05) to saturation (0.95).
         \item \textbf{Failure Models}: 
             \begin{itemize}
@@ -36,7 +42,7 @@
     \begin{equation}
         \mathcal{T}_{norm} = \frac{\sum_{(i,j)} r_{\text{eff}}(i,j)}{N \cdot \bar{D}}
     \end{equation}
-    where $N$ is the number of nodes, $\bar{D} = \frac{1}{|\mathcal{F}|}\sum_{(i,j) \in \mathcal{F}} D_{i,j}$ is the mean demand (averaged over the set $\mathcal{F}$ of pairs with $D_{i,j} > 0$), and $r_{\text{eff}}(i,j)$ is the effective rate delivered for pair $(i,j)$ after the architecture-specific capacity model.
+    where $N$ is the number of nodes, $\bar{D} = \frac{1}{|\mathcal{F}|}\sum_{(i,j) \in \mathcal{F}} D_{i,j}$ is the mean demand (averaged over the set $\mathcal{F}$ of pairs with $D_{i,j} > 0$; $D$ is the demand matrix from \S1.1), and $r_{\text{eff}}(i,j)$ is the effective rate delivered for pair $(i,j)$ after the architecture-specific capacity model.
 
     \paragraph{Effective rate $r_{\text{eff}}$.}
     For each pair $(i,j)$ with positive demand, the framework obtains a waterfilling-derived rate $r_{i,j}$ (from all-pairs shortest-path weights and the power budget), then applies the architecture-specific capacity model to $r_{i,j}$ and the hop count $\ell_{i,j}$ to get $r_{\text{eff}}(i,j)$:
@@ -60,16 +66,16 @@
     \end{equation}
     \begin{itemize}
         \item \textbf{Shale:} $\tau(h) \approx \alpha \cdot h + \beta$, scaling linearly with spray depth $h$.
-        \item \textbf{Opera:} For multi-hop traffic, $\tau \approx L_{avg} \cdot T_{cycle}$.
-        \item \textbf{Sirius:} $\tau \approx L_{avg} \cdot T_{slot}$.
+        \item \textbf{Opera:} $\tau \approx \ell \cdot \delta$ (hop count $\ell$, reconfig delay $\delta$; matches \texttt{Traffic\_Benchmarks.py}).
+        \item \textbf{Sirius:} $\tau \approx \ell \cdot T_{slot}$ (hop count $\ell$, slot duration $T_{slot}$).
     \end{itemize}
 
     \subsubsection{Bandwidth Tax ($\mathcal{B}_{tax}$)}
     Bandwidth tax quantifies the capacity lost to multi-hop routing constraints.
     \begin{equation}
-        \mathcal{B}_{tax} = \frac{\text{Total Capacity Used} - \text{Effective Capacity}}{\text{Total Capacity Used}} = 1 - \frac{1}{\bar{h}}
+        \mathcal{B}_{tax} = \frac{\text{Total Capacity Used} - \text{Effective Capacity}}{\text{Total Capacity Used}} = 1 - \frac{1}{\bar{\ell}}
     \end{equation}
-    where $\bar{h}$ is the average hop count.
+    where $\bar{\ell}$ is the average hop count (path length).
     \begin{itemize}
         \item \textbf{Shale:} $\mathcal{B}_{tax} \approx h/(h+1)$.
         \item \textbf{Opera/Sirius (Indirect):} $\mathcal{B}_{tax} = 1/2$ for 2-hop spraying.
@@ -80,7 +86,7 @@
     \begin{equation}
         \mathcal{D}_{loss} = \frac{\delta}{T_{period}}
     \end{equation}
-    where $\delta$ is the reconfiguration/locking time and $T_{period}$ is the cycle or slot duration ($T_{cycle}$ for Opera, $T_{slot}$ for Sirius). For Shale, $\mathcal{D}_{loss} \approx 0$.
+    where $\delta$ is the reconfiguration/locking time and $T_{period}$ is the cycle or slot duration ($T_{\text{cycle}}$ for Opera, $T_{slot}$ for Sirius; see \texttt{ArchitectureParams} in \texttt{Traffic\_Benchmarks.py}). For Shale, $\mathcal{D}_{loss} \approx 0$.
 
     \subsubsection{Benchmark Score ($S_{bench}$)}
     The composite benchmark score aggregates performance across dimensions to allow single-value comparison.
@@ -105,10 +111,9 @@
         W = \vec{w} \in \mathbb{R}^{n} (Received Data)
     \]
 
-    We define $\mathcal{T}$ as the Traffic Demand Matrix (specific volume from each source to each destination).
-    To calculate the traffic successfully delivered in a timeslot, we perform the element-wise summation (Hadamard product) of the Traffic Matrix and the Connectivity Matrix:
+    We define $D$ as the Traffic Demand Matrix (entries $D_{i,j}$: volume from source $i$ to destination $j$; same as in \S1.1). To calculate the traffic successfully delivered in a timeslot, we perform the element-wise product (Hadamard) of the demand matrix and the connectivity matrix:
     \[
-        \text{Delivered} = \mathcal{T} \circ V
+        \text{Delivered} = D \circ V
     \]
     The total received data $W$ is then the column-sum of this delivered traffic matrix.
     \begin{enumerate}
@@ -571,9 +576,9 @@
     \paragraph{Proposed Opera Theorem}
     \textbf{Theorem (Bandwidth Tax Invariance)}: In a hybrid circuit-packet network with $K$ reconfigurable matchings and a bulk traffic fraction $\alpha$, the expected bandwidth tax $\mathcal{P}$ satisfies:
     \begin{equation}
-        \mathcal{P} \ge (1-\alpha) \cdot (L_{exp} - 1) + \frac{\delta}{T_{slot}}
+        \mathcal{P} \ge (1-\alpha) \cdot (L_{\text{exp}} - 1) + \frac{\delta}{T_{\text{cycle}}}
     \end{equation}
-    where $L_{exp}$ is the average expander path length and $\delta/T_{slot}$ represents the duty cycle loss during reconfiguration ($\delta=2, T_{slot}=20$ in our experiments).
+    where $L_{\text{exp}}$ is the average expander path length and $\delta/T_{\text{cycle}}$ is the duty cycle loss (Opera: \texttt{opera\_delta}, \texttt{opera\_t\_cycle} in \texttt{Traffic\_Benchmarks.py}).
 
     \begin{table}[H]
         \centering
@@ -583,9 +588,9 @@
             \textbf{Metric} & \textbf{Value} & \textbf{Notes} \\
             \hline
             Bulk Traffic Fraction ($\alpha$) & 0.92 & Direct circuit paths \\
-            Duty Cycle Loss & 10.0\% & $\delta=2, T_{slot}=20$ \\
-            Effective Throughput (Bulk) & 0.828 & $0.92 \times (1 - 0.1)$ \\
-            Effective Throughput (Expander) & 0.033 & $0.08 \times (1 - 0.1) / L_{avg}$ \\
+            Duty Cycle Loss & $\delta/T_{\text{cycle}}$ & \texttt{opera\_delta}, \texttt{opera\_t\_cycle} \\
+            Effective Throughput (Bulk) & 0.828 & $\alpha \times (1 - \delta/T_{\text{cycle}})$ \\
+            Effective Throughput (Expander) & 0.033 & $(1-\alpha) \times (1 - \delta/T_{\text{cycle}}) / \bar{\ell}$ \\
             \textbf{Composite Score} & \textbf{0.6062} & Uniform Traffic Scenario \\
             \hline
         \end{tabular}
@@ -731,17 +736,17 @@
     \subsection{Numerical Results \& Capacity Penalties}
     Our initial simulations indicated that Sirius significantly outperformed other architectures due to its 1-hop direct scheduling. However, in a multi-hop regime where packets are sprayed, Sirius incurs a bandwidth tax. Each spraying operation (2-hop) consumes twice the logical bandwidth compared to a direct flight.
 
-    To improve simulation fidelity, we implement the following capacity penalty based on path length $L$ and load factor $\rho$:
+    To improve simulation fidelity, we implement the following capacity penalty based on path length $\ell$ (hop count) and load factor $\rho$ (matches \texttt{\_apply\_architecture\_model} in \texttt{Traffic\_Benchmarks.py}):
     \begin{equation}
-        C(L, \rho) = C_{hops}(L) \cdot C_{load}(\rho)
+        C(\ell, \rho) = C_{\text{hops}}(\ell) \cdot C_{\text{load}}(\rho)
     \end{equation}
     where the hop-based penalty is:
     \begin{equation}
-        C_{hops}(L) = 
+        C_{\text{hops}}(\ell) = 
         \begin{cases} 
-        \eta & L \le 1 \\
-        \eta / 2 & 1 < L \le 2 \\
-        \eta / L^2 & L > 2
+        \eta & \ell \le 1 \\
+        \eta / 2 & 1 < \ell \le 2 \\
+        \eta / \ell^2 & \ell > 2
         \end{cases}
     \end{equation}
     and the high-load sensitivity function (for $\rho > 0.85$) is:
@@ -777,7 +782,7 @@
             \hline
             \textbf{Metric} & \textbf{Value} & \textbf{Notes} \\
             \hline
-            Timeslot Efficiency ($\eta$) & 96.0\% & $T_{slot}=100, \delta=4$ \\
+            Timeslot Efficiency ($\eta$) & 96.16\% & \texttt{sirius\_eta}; $\eta = (T_{slot}-\delta)/T_{slot}$ (\texttt{sirius\_t\_slot}, \texttt{sirius\_delta}) \\
             Direct Path Capacity & 1.0 $\eta$ & 1-hop (Ideal) \\
             Sprayed Path Capacity & 0.5 $\eta$ & 2-hop (Bandwidth Tax) \\
             Saturation Load & 0.85 & Queue divergence point \\

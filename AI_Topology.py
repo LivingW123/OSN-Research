@@ -101,7 +101,7 @@ def evolve_topology(num_nodes, target_degree, population_size=15, generations=50
                     traffic_type="uniform", frozen_backbone=None):
     """
     Evolves a network topology using PyGAD.
-    Optimizes for a mix of minimizing ASPL and maximizing Shannon Capacity.
+    Optimizes for a mix of minimizing ASPL and maximizing delivered capacity.
     """
 
     print(f"AI Evolving Topology (PyGAD) (N={num_nodes}, D={target_degree}, Traffic={traffic_type})...")
