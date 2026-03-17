@@ -280,6 +280,7 @@ def calculate_topology_capacity(adj_list: List[List[int]],
     total_bandwidth_tax = 0
     active_flows = 0
     latencies = []
+    inactive_flows = []
 
     for idx in range(len(channels_noise)):
         p = allocations[idx]
@@ -318,10 +319,22 @@ def calculate_topology_capacity(adj_list: List[List[int]],
             if effective_rate > 1e-9:
                 total_completion_time += demand / effective_rate
             else:
-                total_completion_time += 1e6
+                inactive_flows.append(demand)
         else:
-            total_completion_time += 1e6
+            inactive_flows.append(demand)
             
+    # Handle inactive flows: use worst active FCT as proxy
+    if inactive_flows:
+        if active_flows > 0 and total_completion_time > 0:
+            # Worst-case: each inactive flow takes as long as the slowest active flow
+            worst_active_fct = total_completion_time / active_flows
+            for d in inactive_flows:
+                total_completion_time += worst_active_fct
+        else:
+            # No active flows at all — everything is bottlenecked
+            for d in inactive_flows:
+                total_completion_time += d / 1e-9
+
     # Apply global capacity penalty (e.g., Sirius load sensitivity > 0.85)
     if architecture_type == "sirius":
         load = np.sum(traffic_matrix) / (num_nodes * (num_nodes - 1))
