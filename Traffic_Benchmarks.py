@@ -106,7 +106,7 @@ def generate_skewed_traffic(num_nodes: int, skew_factor: float = 2.0,
 def generate_adversarial_traffic(num_nodes: int) -> np.ndarray:
     """
     Adversarial Traffic Model: Maximizes congestion on bottleneck links.
-    
+
     Each node sends all traffic to the node furthest away.
     Used to stress-test worst-case performance.
     """
@@ -116,6 +116,98 @@ def generate_adversarial_traffic(num_nodes: int) -> np.ndarray:
         j = (i + num_nodes // 2) % num_nodes
         if i != j:
             traffic[i, j] = num_nodes  # Heavy concentrated demand
+    return traffic
+
+
+# ── Architecture-targeted adversarial skew generators ────────────────────────
+
+def generate_adversarial_skew_opera(num_nodes: int,
+                                    hot_demand: float = 8.0,
+                                    cold_demand: float = 0.1,
+                                    num_hot: int = 2) -> np.ndarray:
+    """
+    Opera-adversarial 'elephant-flow' skew.
+
+    Two destination nodes attract very high demand from ALL sources.
+    This drives opera_rho = Σ T / (N·(N-1)) above the bulk ceiling
+    (α·(1−δ/T_cycle) ≈ 0.8832) at a LOWER load factor than uniform:
+
+        L_crit ≈ bulk_ceil · N·(N-1) / Σ T
+                ≈ 0.8832 · 72 / 132 ≈ 0.48
+
+    Opera saturates at L ≈ 0.48; other architectures remain below their
+    own critical loads at the same L.
+
+    Parameters
+    ----------
+    hot_demand  : demand on pairs (i → hot_dest_j), default 8
+    cold_demand : demand on all other pairs, default 0.1
+    num_hot     : number of shared hot destinations (nodes 0..num_hot-1)
+    """
+    traffic = np.full((num_nodes, num_nodes), cold_demand)
+    np.fill_diagonal(traffic, 0)
+    for i in range(num_nodes):
+        for j in range(num_hot):
+            if i != j:
+                traffic[i, j] = hot_demand
+    return traffic
+
+
+def generate_adversarial_skew_shale(num_nodes: int,
+                                    target_node: int = 0,
+                                    demand: float = 10.0) -> np.ndarray:
+    """
+    Shale-adversarial 'many-to-one funnel' skew.
+
+    All N-1 source nodes direct their entire traffic to a single target.
+    Under Shale VLB, every spray path must eventually exit through the
+    target's ingress link, collapsing the congestion factor:
+
+        u_max → N-1  ⟹  throughput ≈ rate / (N-1)
+
+    Opera and Sirius serve the target directly (1-hop, fully connected).
+    GA-Robust may use 1 or 2 hops depending on its evolved topology.
+    """
+    traffic = np.zeros((num_nodes, num_nodes))
+    for i in range(num_nodes):
+        if i != target_node:
+            traffic[i, target_node] = demand
+    return traffic
+
+
+def generate_adversarial_skew_ga(adj_list: List[List[int]],
+                                 num_nodes: int,
+                                 skew_factor: float = 2.0) -> np.ndarray:
+    """
+    GA-adversarial 'topology-aware long-hop' skew.
+
+    Traffic is biased toward the actual long-hop destination pairs of the
+    given sparse topology: rank 1 = farthest destination (most traffic),
+    rank N-1 = nearest destination (least traffic).
+
+    On a GA-evolved 4-regular graph (ASPL ≈ 1.81, 17 % of pairs are 3-hop):
+        effective_rate = rate / hops  →  3-hop flows penalised 3×
+
+    On fully-connected topologies (Opera, Sirius — all pairs hops=1) every
+    destination is equidistant, so the skew degenerates to uniform demand
+    and does NOT adversely affect those architectures.
+
+    Parameters
+    ----------
+    adj_list    : adjacency list of the topology to target
+    num_nodes   : number of nodes N
+    skew_factor : Zipf exponent γ (default 2.0)
+    """
+    dist = _get_all_pairs_dist(adj_list, num_nodes)
+    traffic = np.zeros((num_nodes, num_nodes))
+    for i in range(num_nodes):
+        # Sort destinations: farthest first (rank 1 = most demand)
+        dests = [(dist[i, j], j)
+                 for j in range(num_nodes)
+                 if j != i and dist[i, j] != np.inf]
+        dests.sort(key=lambda x: -x[0])          # descending hop count
+        for rank, (_, j) in enumerate(dests, start=1):
+            traffic[i, j] = 1.0 / (rank ** skew_factor + 1)
     return traffic
 
 

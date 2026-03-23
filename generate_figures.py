@@ -36,6 +36,8 @@ from Traffic_Benchmarks import (
     run_load_sweep, run_h_sweep,
     compute_benchmark_score, TrafficType,
     find_adversarial_critical_points, get_hw_reconfig_ratio,
+    generate_adversarial_skew_opera, generate_adversarial_skew_shale,
+    generate_adversarial_skew_ga,
     _get_all_pairs_dist,
 )
 
@@ -722,5 +724,123 @@ fig_crit.savefig(os.path.join(IMG_DIR, 'adversarial_critical_points.png'),
 plt.close(fig_crit)
 print("  ✓ adversarial_critical_points.png")
 
+
 # ====================================================================
-print(f"\nDone — {24} figures written to {IMG_DIR}/")
+# 10.  ARCHITECTURE-TARGETED ADVERSARIAL SKEW COMPARISONS
+# ====================================================================
+print("\nAdversarial skew comparison figures …")
+
+# Each sub-section targets one architecture's structural weakness.
+# All four architectures are plotted in every graph so the reader can
+# compare the targeted arch against the others under the same skew.
+#
+# Skew 1 — Opera-adversarial elephant flows
+#   hot_demand=8, cold_demand=0.1, num_hot=2  →  Σ T ≈ 133
+#   opera_rho_crit_L ≈ 0.8832·72/133 ≈ 0.48  (Opera saturates early)
+#
+# Skew 2 — Shale-adversarial many-to-one funnel
+#   All N-1 sources → node 0  →  u_max = N-1 = 8
+#   Shale throughput ≈ 1/8 of baseline; Opera/Sirius unaffected (1-hop).
+#
+# Skew 3 — GA-adversarial long-hop cyclic scatter
+#   Traffic biased toward index-distant nodes; 17 % of GA pairs are 3-hop.
+#   Opera/Sirius fully connected (hops=1 always), so they are unaffected.
+
+_adv_loads = np.linspace(0.05, 0.95, 14).tolist()
+_op_params  = ArchitectureParams()
+_bulk_ceil  = _op_params.opera_alpha * (1.0 - _op_params.opera_delta /
+                                         _op_params.opera_t_cycle)
+
+# GA-adversarial traffic is topology-aware: it biases demand toward the
+# actual long-hop pairs of the GA topology (ranks by BFS distance).
+# On fully-connected topologies (Opera, Sirius) all pairs are 1-hop so
+# the skew collapses to uniform → those architectures are unaffected.
+_ga_adv_tm = generate_adversarial_skew_ga(genetic_adj, N)
+
+_adv_skews = [
+    (
+        'opera',
+        generate_adversarial_skew_opera(N),
+        'Opera-Adversarial Skew\n'
+        r'(Elephant flows: $\rho_{bulk}$ exceeds ceiling at $L\approx0.48$)',
+        'adversarial_skew_opera.png',
+        f'Opera bulk ceiling $\\rho^*$={_bulk_ceil:.3f}',
+        _bulk_ceil,
+    ),
+    (
+        'shale',
+        generate_adversarial_skew_shale(N),
+        'Shale-Adversarial Skew\n'
+        r'(Many-to-one funnel: $u_{max} \to N{-}1$, Shale throughput $\to 1/(N{-}1)$)',
+        'adversarial_skew_shale.png',
+        None, None,
+    ),
+    (
+        'genetic',
+        _ga_adv_tm,
+        'GA-Adversarial Skew (topology-aware long-hop)\n'
+        r'(Traffic biased to actual 2–3 hop pairs; Opera/Sirius unaffected — all 1-hop)',
+        'adversarial_skew_ga.png',
+        None, None,
+    ),
+]
+
+for target_arch, base_tm, fig_title, fname, vline_label, vline_x in _adv_skews:
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
+
+    for aname, alabel, acolor, atype in zip(arch_names, arch_labels,
+                                             arch_colors, arch_types):
+        res_tp, res_fct = [], []
+        for L in _adv_loads:
+            tm = base_tm * L
+            fct, prim, _ = calculate_topology_capacity(
+                TOPOS[aname], tm, total_power=POWER,
+                architecture_type=atype, return_metrics=True)
+            # Delivered throughput = min(capacity ceiling, offered load).
+            # Caps at L to prevent the normalisation artifact (tp > 1) that
+            # arises when waterfilling over-allocates power to low-noise hot
+            # flows; also gives load-dependent saturation curves.
+            res_tp.append(min(prim.throughput, L))
+            res_fct.append(fct)
+
+        lw = 2.5 if aname == target_arch else 1.2
+        ls = '-' if lw > 2 else '--'
+        ax1.plot(_adv_loads, res_tp, marker='o', ls=ls, lw=lw,
+                 color=acolor, label=alabel, markersize=4)
+        ax2.plot(_adv_loads, res_fct, marker='o', ls=ls, lw=lw,
+                 color=acolor, label=alabel, markersize=4)
+
+    # Mark the adversarial critical load on the throughput panel
+    if vline_x is not None:
+        ax1.axvline(vline_x, color='#E53935', ls=':', lw=1.5,
+                    label=vline_label)
+
+    ax1.set_xlabel('Load Factor $L$ (ratio)')
+    ax1.set_ylabel('Normalized Throughput (fraction of line rate)')
+    ax1.set_title(fig_title + '\n— Throughput', fontsize=9)
+    ax1.legend(fontsize=8)
+    ax1.grid(alpha=.3)
+
+    ax2.set_xlabel('Load Factor $L$ (ratio)')
+    ax2.set_ylabel('Flow Completion Time (normalized ratio)')
+    ax2.set_yscale('log')
+    ax2.set_title(fig_title + '\n— FCT', fontsize=9)
+    ax2.legend(fontsize=8)
+    ax2.grid(alpha=.3)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(IMG_DIR, fname), dpi=DPI, bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ {fname}")
+
+
+# ====================================================================
+print(f"\nDone — {27} figures written to {IMG_DIR}/")
+# Figure inventory (27 total):
+#  1-5   shale WF + benchmarks
+#  6-10  opera WF + efficiency + throughput
+#  11-12 sirius efficiency + bar
+#  13-14 genetic WF
+#  15-22 cross-arch benchmarks (4 scenarios × 2 + capacity + fct)
+#  23    adversarial_critical_points
+#  24-26 adversarial_skew_{opera,shale,ga}  ← NEW
