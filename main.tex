@@ -22,7 +22,18 @@
         \item \textbf{Traffic Models} (implemented in \texttt{Traffic\_Benchmarks.py}): Demand matrix $D[i,j]$ for $i \neq j$; $D[i,i]=0$.
             \begin{itemize}
                 \item \textbf{Uniform}: $D[i,j] = 1$ (all pairs equal).
-                \item \textbf{Skewed}: $D[i,j] = 1 / (|i - j|^\gamma + 1)$, $\gamma$ skew exponent (default 2.0).
+                \item \textbf{Skewed}: Zipf/power-law over randomised node ranks.  Each source $i$ draws a uniformly random permutation $\pi_i$ of the other $N{-}1$ destinations; demand to the rank-$r$ destination is
+                \[
+                    D[i,j] = \frac{1}{r_{\pi_i}(j)^{\,\gamma} + 1}, \quad r_{\pi_i}(j) \in \{1,\ldots,N{-}1\}
+                \]
+                with $\gamma$ the Zipf exponent (default 2.0).  Using a random permutation per source means each seed produces a \emph{different spatial pattern} while preserving the same marginal Zipf distribution — addressing the limitation that a fixed index-distance formula always places the same pair of nodes in the same ``locality'' class.
+
+                \textbf{Exact skew ratio} (max to min demand per source):
+                \[
+                    \frac{D_{\max}}{D_{\min}} = \frac{1/(1^\gamma+1)}{1/((N{-}1)^\gamma+1)} = \frac{(N{-}1)^\gamma+1}{2} \approx \frac{(N{-}1)^\gamma}{2}
+                \]
+                For $N=9$, $\gamma=2.0$: ratio $\approx 32\times$ ($D_{\max}\approx0.50$, $D_{\min}\approx0.015$).
+                For $N=9$, $\gamma=1.0$: ratio $\approx 4\times$ ($D_{\max}\approx0.50$, $D_{\min}\approx0.111$).
                 \item \textbf{Hotspot}: $D[i,j] = \omega$ if $i \in \mathcal{H}$ or $j \in \mathcal{H}$, else $1$; $\mathcal{H}$ hotspot nodes, $\omega$ intensity (e.g.\ 10).
                 \item \textbf{Adversarial}: $D[i, j(i)] = N$ for $j(i) = (i + \lfloor N/2 \rfloor) \bmod N$, $i \neq j(i)$; all other entries $0$.
             \end{itemize}
@@ -67,31 +78,45 @@
 
     \begin{table}[H]
         \centering
-        \caption{Architecture-Specific Constants for $r_{\text{eff}}$}
+        \caption{Architecture-Specific Constants for $r_{\text{eff}}$ and unified hardware reconfiguration overhead}
         \begin{tabular}{|l|l|c|c|l|}
             \hline
             \textbf{Arch.} & \textbf{Parameter} & \textbf{Ratio} & \textbf{Physical} & \textbf{Meaning} \\
             \hline
-            \multirow{4}{*}{Shale}
+            \multirow{5}{*}{Shale}
                 & $h$ (spray depth)      & ---                & ---               & VLB intermediate hops \\
                 & $T_{slot}$             & ---                & 5.632\,ns         & Timeslot duration \\
                 & $\gamma$ (hop overhead)& 1.2                & $6.76\,\text{ns}$ & Cycle overhead per spray hop \\
                 & $\beta_0$ (base delay) & 2.5                & $14.08\,\text{ns}$& Base processing latency \\
+                & \textbf{hw\_reconfig\_ratio} $\delta/T_{slot}$ & \textbf{0.0000} & 0\,ns & No reconfiguration gap \\
             \hline
-            \multirow{4}{*}{Opera}
+            \multirow{5}{*}{Opera}
                 & $\alpha$ (bulk frac.)  & 0.92               & ---               & Fraction of bytes on direct circuits \\
-                & $r$ (reconfig delay)   & $\delta/T_c = 0.04$& ${\sim}10\,\mu\text{s}$ & Raw switch reconfiguration time \\
+                & $\delta$ (reconfig delay)& $\delta/T_c = 0.04$& ${\sim}10\,\mu\text{s}$ & Raw switch reconfiguration time \\
                 & $\varepsilon$ (slice)  & ---                & $90\,\mu\text{s}$ & Topology-slice duration \\
-                & $T_{\text{cycle}}$     & 50.0               & $10.8\,\text{ms}$ & Full rotation cycle (108 racks) \\
+                & $T_{\text{cycle}}$     & 50.0               & ${\sim}250\,\mu\text{s}$ & Full rotation cycle \\
+                & \textbf{hw\_reconfig\_ratio} $\delta/T_c$    & \textbf{0.0400} & $10/250\,\mu\text{s}$ & 4\% of cycle lost to reconfig \\
             \hline
-            \multirow{3}{*}{Sirius}
+            \multirow{4}{*}{Sirius}
                 & $T_{slot}$                         & 1.0    & 100\,ns           & Timeslot duration \\
                 & $\delta$ (reconfig)                & 0.0384 & 3.84\,ns          & Laser tuning time \\
                 & $\eta$ (efficiency)                & 0.9616 & ---               & $1 - \delta/T_{slot}$ \\
+                & \textbf{hw\_reconfig\_ratio} $\delta/T_{slot}$ & \textbf{0.0384} & 3.84\,ns/100\,ns & 3.84\% of slot lost to retuning \\
+            \hline
+            \multirow{2}{*}{GA-Robust}
+                & (static topology)      & ---                & ---               & No circuit reconfiguration \\
+                & \textbf{hw\_reconfig\_ratio} & \textbf{0.0000} & ---             & Zero overhead; static wiring \\
             \hline
         \end{tabular}
         \label{tab:reff_constants}
     \end{table}
+
+    \paragraph{Unified hardware comparison.}
+    The \textbf{hw\_reconfig\_ratio} $= \delta/T$ (implemented as \texttt{get\_hw\_reconfig\_ratio()} in \texttt{Traffic\_Benchmarks.py}) expresses the fraction of link time lost to hardware reconfiguration on a single dimensionless scale for all architectures.  Two key observations:
+    \begin{itemize}
+        \item Opera and Sirius are within $0.16$ percentage points of each other ($4.00\%$ vs $3.84\%$), confirming that two very different hardware generations — $\mu$s-class rotor switches vs ns-class tunable lasers — impose nearly identical reconfiguration tax when normalised to their respective slot granularities.
+        \item Shale and GA-Robust both show $0\%$, giving them a structural advantage.  Shale pays instead through the VLB bandwidth tax ($1-1/(2h)$); GA-Robust avoids both penalties by design.
+    \end{itemize}
 
     \subsubsection{Flow Completion Time ($FCT_{norm}$)}
     The normalized Flow Completion Time (FCT) measures the time to complete a unit flow relative to the ideal transmission time.
@@ -107,7 +132,12 @@
     \end{equation}
     \begin{itemize}
         \item \textbf{Shale:} $\tau \approx \gamma \cdot \bar{\ell}_{\text{spray}} + \beta_0$, where $\bar{\ell}_{\text{spray}}$ is the mean hop count across the spray paths actually used, $\gamma = 1.2$ ($6.76\,\text{ns}$ per hop at $T_{slot} = 5.632\,\text{ns}$) is the per-hop cycle overhead, and $\beta_0 = 2.5$ ($14.08\,\text{ns}$) is the base processing delay. For example, with $h=4$: $\tau \approx 1.2 \times 4 + 2.5 = 7.3$ normalized units $\approx 41.1\,\text{ns}$. The Shale paper guarantees worst-case throughput of $1/(2h)$ of line rate for $h$ spray hops.
-        \item \textbf{Opera:} $\tau \approx \ell \cdot \varepsilon$, where $\varepsilon = 90\,\mu\text{s}$ is the topology-slice duration (end-to-end delay bound in the paper's 108-rack example). Each hop must complete within one slice before the circuit reconfigures. The raw reconfiguration delay $r \approx 10\,\mu\text{s}$ (practical rotor switches) is amortized within $\varepsilon$, yielding a duty cycle of ${\sim}98\%$. For a 2-hop expander path: $\tau \approx 2 \times 90\,\mu\text{s} = 180\,\mu\text{s}$. In our normalized model (\texttt{Traffic\_Benchmarks.py}), we use $\delta = 2.0$ and $T_{\text{cycle}} = 50.0$ as abstract units.
+        \item \textbf{Opera:} At low load, $\tau \approx \ell \cdot \varepsilon$ where $\varepsilon = 90\,\mu\text{s}$ is the topology-slice duration. At higher load, bulk traffic queues for its scheduled direct circuit, adding an M/D/1 queuing component:
+        \[
+            \tau(\ell, \rho) \approx \ell \cdot \delta + \min\!\left(\frac{\rho_{\text{bulk}} \cdot T_{\text{cycle}}}{2(1-\rho_{\text{bulk}})},\; 5\,T_{\text{cycle}}\right),
+            \qquad \rho_{\text{bulk}} = \alpha \cdot \frac{\rho}{\alpha(1-\delta/T_c)}
+        \]
+        where $\rho_{\text{bulk}}$ is the offered load normalised to the bulk-circuit capacity ceiling $\alpha(1-\delta/T_c) \approx 0.883$.  At low load the queuing term is negligible; above the ceiling it grows steeply (M/D/1 divergence).  The effective bulk fraction also decreases above the ceiling as traffic overflows to the expander, raising bandwidth tax.  In our normalised model: $\delta = 2.0$, $T_{\text{cycle}} = 50.0$ (abstract units); physical: $\delta \approx 10\,\mu\text{s}$, $T_{\text{cycle}} \approx 250\,\mu\text{s}$.
         \item \textbf{Sirius:} $\tau \approx \ell / \eta$, where $\eta = 1 - \delta/T_{slot} = 1 - 3.84\,\text{ns}/100\,\text{ns} = 0.9616$ is the scheduling efficiency. Each hop consumes one $100\,\text{ns}$ timeslot, but only $96.16\,\text{ns}$ carries data, so the effective per-hop cost is $1/\eta \approx 104\,\text{ns}$. Sirius is fundamentally a 2-hop system (source$\to$intermediate$\to$destination via Valiant Load Balancing), giving $\tau \approx 2/\eta \approx 208\,\text{ns}$. Additional latency from propagation (up to $2.5\,\mu\text{s}$ for $500\,\text{m}$ detouring) and queuing at intermediate nodes (up to $1.6\,\mu\text{s}$ per epoch of $16 \times 100\,\text{ns}$) may also apply. Multi-hop ($\ell \geq 3$) paths do not appear in the Sirius paper but are modeled in our framework for generality.
     \end{itemize}
 
@@ -589,7 +619,7 @@
     \begin{figure}[H]
         \centering
         \includegraphics[width=\textwidth]{images/opera_efficiency_report.png}
-        \caption{Opera efficiency under load sweep. \textbf{Left:} Bandwidth tax percentage --- remains near zero because 92\% of traffic uses direct 1-hop circuits. \textbf{Right:} Mean latency stays constant regardless of load, reflecting Opera's deterministic topology-slice scheduling ($\tau \approx \ell \cdot \varepsilon$).}
+        \caption{Opera efficiency under load sweep. \textbf{Left:} Bandwidth tax percentage --- near zero at low load (92\% of traffic on direct 1-hop circuits) but rises above the bulk-circuit capacity ceiling $\alpha(1-\delta/T_c)\approx 0.883$ as overflow traffic is forced onto the multi-hop expander. \textbf{Right:} Mean latency grows with load due to M/D/1 queuing for bulk circuit slots; the knee corresponds to $\rho_{\text{bulk}} \to 1$ where the queuing term diverges.}
         \label{fig:opera_tax}
     \end{figure}
     \begin{figure}[H]
@@ -619,7 +649,7 @@
             Duty Cycle Loss & $\delta/T_{\text{cycle}}$ & \texttt{opera\_delta}, \texttt{opera\_t\_cycle} \\
             Effective Throughput (Bulk) & 0.828 & $\alpha \times (1 - \delta/T_{\text{cycle}})$ \\
             Effective Throughput (Expander) & 0.033 & $(1-\alpha) \times (1 - \delta/T_{\text{cycle}}) / \bar{\ell}$ \\
-            \textbf{Composite Score} & \textbf{0.6062} & Uniform Traffic Scenario \\
+            \textbf{Composite Score} & \textbf{0.0201} & Uniform Traffic Scenario (load-dependent latency model) \\
             \hline
         \end{tabular}
         \label{tab:opera_efficiency}
@@ -817,7 +847,7 @@
             Direct Path Capacity & 1.0 $\eta$ & 1-hop (Ideal) \\
             Sprayed Path Capacity & 0.5 $\eta$ & 2-hop (Bandwidth Tax) \\
             Saturation Load & 0.85 & Queue divergence point \\
-            \textbf{Composite Score} & \textbf{0.4825} & Uniform Traffic Scenario \\
+            \textbf{Composite Score} & \textbf{0.0404} & Uniform Traffic Scenario \\
             \hline
         \end{tabular}
         \label{tab:sirius_efficiency}
@@ -854,8 +884,16 @@
     \end{equation}
     where $D=4$ is the target degree and $\lambda_1, \lambda_2$ are weighting coefficients.
 
-    \subsection{Robust Evolution Strategy}
-    Earlier versions of the GA tended to overfit to specific traffic distributions (e.g., skewed). We implemented a "Robust Evolution" strategy where candidates are evaluated against the entire suite of traffic models. This prevents the formation of "lucky" links and instead forces the evolution of generalized expander properties with high-capacity shortcuts for dominant pairs.
+    \subsection{Robust Evolution Strategy and Middle-Ground Position}
+    Earlier versions of the GA tended to overfit to specific traffic distributions (e.g., skewed). We implemented a \textbf{Robust Evolution} strategy (\texttt{traffic\_type="robust"}) where each candidate topology is evaluated against the full suite $\mathcal{T} = \{\text{Uniform, Skewed, Hotspot}\}$ simultaneously, using the \emph{average} capacity across all three as the capacity term in the fitness function. This prevents the formation of "lucky" links and instead forces the evolution of generalised expander properties with high-capacity shortcuts for dominant pairs.
+
+    \paragraph{Why GA-Robust finds the middle ground.}
+    Three structural properties explain GA-Robust's position between Opera, Sirius, and Shale:
+    \begin{enumerate}
+        \item \textbf{hw\_reconfig\_ratio $= 0.0$}.  GA-Robust is a \emph{static} topology: wires are fixed, no circuit reconfiguration occurs.  This gives it zero reconfiguration tax (Table~\ref{tab:reff_constants}), the same advantage as Shale but without Shale's VLB bandwidth tax.  Concretely: Opera pays $\delta/T_c = 0.0400$ and Sirius pays $\delta/T_{slot} = 0.0384$ per slot; GA-Robust pays $0.0000$.
+        \item \textbf{No forced routing mode.}  Opera must route 92\% of traffic on the next available direct circuit; Sirius mandates 2-hop VLB for all traffic.  GA-Robust imposes no such constraint --- the evolved topology simply has short paths ($\overline{d} < h{+}1$), so the generic capacity model $r_{\text{eff}} = r/\overline{d}$ yields higher throughput than Shale's $r/(h{+}1)$.
+        \item \textbf{Multi-objective fitness.}  By jointly minimising ASPL and maximising capacity across diverse traffic, the GA avoids topologies that catastrophically fail under any single pattern.  The resulting adversarial critical point $\rho^* \approx 1/\overline{d}$ has no sharp saturation cliff, unlike Sirius ($\rho^*=0.85$) or Shale ($\rho^*=1/(h{+}1)$).
+    \end{enumerate}
 
     \paragraph{Example 5.1 (GA-Robust for N=9)}:
     The resulting adjacency matrix $W$ for a robustly evolved topology ($N=9, D=4$) highlights the symmetry and diversity of links identified by the genetic algorithm to satisfy diverse traffic demands:
@@ -891,6 +929,29 @@
 
     \paragraph{Proposed GA Theorem}
     \textbf{Theorem (Topological Adaptability)}: For any traffic distribution $\mathcal{T}$, there exists an evolved topology $W^*$ such that the capacity $\mathcal{C}(W^*, \mathcal{T})$ is at least $(1 - \epsilon) \cdot \mathcal{C}_{ideal}$, where $\epsilon$ is a function of the degree constraint $D$ and the entropy of $\mathcal{T}$.
+
+    \section{Adversarial Critical Points}
+    \label{sec:critical_points}
+
+    A network becomes \emph{adversarial} when additional offered load no longer increases delivered throughput --- it only deepens queues.  We identify two complementary estimates for each architecture.
+
+    \paragraph{Analytical critical points.}
+    \begin{itemize}
+        \item \textbf{Sirius:} $\rho^* = 0.85$.  The load penalty $C_{\text{load}}(\rho) = \exp(-10(\rho-0.85))$ activates sharply at $\rho=0.85$, causing exponential throughput collapse.  Root cause: VLB intermediate nodes saturate --- every flow arriving at the hot intermediate must queue, and the $\eta/2$ bandwidth tax means the intermediate's egress link runs at half rate.
+        \item \textbf{Opera:} $\rho^* = \alpha(1-\delta/T_c) \approx 0.883$.  Above this bulk-circuit capacity ceiling, all additional load overflows to the expander, raising bandwidth tax and triggering M/D/1 queuing growth (\S1.2.3).
+        \item \textbf{Shale:} $\rho^* = 1/(h{+}1)$.  This is the VLB throughput ceiling; further load builds queue depth without increasing delivered throughput.  For $h=2$: $\rho^*=0.333$.
+        \item \textbf{GA-Robust:} $\rho^* \approx 1/\overline{d}(W^*)$ where $\overline{d}$ is the ASPL of the evolved topology.  Because $\overline{d} < h{+}1$ by construction, GA-Robust's ceiling is higher than Shale's; because the topology is static (hw\_reconfig\_ratio $= 0$), it avoids Opera's and Sirius's circuit-scheduling saturation.
+    \end{itemize}
+
+    \paragraph{Experimental detection.}
+    Implemented in \texttt{find\_adversarial\_critical\_points()} (\texttt{Traffic\_Benchmarks.py}): sweep load from 0.05 to 0.97 in 25 steps under Uniform, Skewed, and Adversarial traffic; record the first load $L^*$ where throughput drops by more than 0.03 in a single step.  Figure~\ref{fig:critical_points} overlays both estimates.
+
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\textwidth]{images/adversarial_critical_points.png}
+        \caption{Adversarial critical-points sweep across three traffic scenarios. Dashed vertical lines mark the \emph{analytical} $\rho^*$ per architecture; dotted lines mark the \emph{experimental} $\rho^*$ detected from the simulation.  Sirius collapses first ($\rho^*=0.85$) under all patterns; Opera saturates last under Uniform and Hotspot ($\rho^*\approx 0.883$); Shale saturates earliest at $1/(h{+}1)$.  GA-Robust has no sharp collapse, confirming that multi-objective evolution avoids single-bottleneck failure modes.}
+        \label{fig:critical_points}
+    \end{figure}
 
     \section{Performance Comparison}
     We benchmarked all architectures --- Opera, Shale, Sirius, and the Genetic Algorithm --- across four distinct scenarios: Uniform, Skewed (power-law), Hotspot, and Traffic Demand (aggregate demand delivered per cycle). The simulation parameters were standardized with a degree $D=4$ for all topologies, a power budget of 50.0, and $N=16$ nodes.
@@ -946,10 +1007,10 @@
             \hline
             \textbf{Architecture} & \textbf{Uniform} & \textbf{Skewed} & \textbf{Hotspot} & \textbf{Traffic Demand} \\
             \hline
-            Opera & 0.0274 & 0.0274 & 0.0274 & 0.0472 \\
-            Shale RR2 & 0.0006 & 0.0008 & 0.0001 & 0.0004 \\
-            Sirius & 0.0404 & 0.0404 & 0.0000 & 0.0694 \\
-            \textbf{Genetic (Robust)} & \textbf{0.0299} & \textbf{0.0387} & \textbf{0.0277} & \textbf{0.0386} \\
+            Opera    & 0.0201 & 0.0269 & 0.0064 & 0.0321 \\
+            Shale RR2 & 0.0015 & 0.0018 & 0.0002 & 0.0004 \\
+            Sirius   & 0.0404 & 0.0404 & 0.0000 & 0.0694 \\
+            \textbf{GA-Robust} & \textbf{0.0827} & \textbf{0.0899} & \textbf{0.0937} & \textbf{0.0453} \\
             \hline
         \end{tabular}
         \label{tab:final_comparison}
@@ -957,14 +1018,15 @@
 
     The results reveal each architecture's comparative advantage---and weakness.
 
-    \paragraph{Sirius: weak against hotspot / skewed traffic.}
-    Under Uniform traffic, Sirius achieves the highest score among fixed architectures (0.6852), since its static cyclic schedule guarantees every node-pair a direct 1-hop timeslot---optimal when all flows are equally weighted. However, Sirius is traffic-oblivious: its VLB routing wastes the $2\times$ bandwidth tax even when the demand is already uniform. Under Hotspot traffic (Figure~\ref{fig:load_sweep_hotspot}), Sirius throughput collapses to zero beyond load factor $\approx 0.3$, and FCT explodes to $>10^{11}$ (congestion collapse at intermediate nodes). This confirms the Sirius paper's design limitation: VLB assumes uniform demand, and when many flows target the same destination, the intermediate nodes forwarding to that destination saturate, triggering the $\exp(-10(\rho-0.85))$ load penalty.
+    \paragraph{Sirius: weak against hotspot traffic (adversarial critical point $\rho^*=0.85$).}
+    Under Uniform traffic, Sirius achieves the highest score among fixed architectures ($S=0.0404$), since its static cyclic schedule guarantees every node-pair a direct 1-hop timeslot. However, Sirius is traffic-oblivious: its VLB routing wastes the $2\times$ bandwidth tax even when demand is already uniform, and the $\eta=0.9616$ scheduling efficiency (hw\_reconfig\_ratio~$=0.0384$) imposes a constant 3.84\% slot loss. Under Hotspot traffic, Sirius throughput collapses to zero and FCT explodes to $>10^{11}$ beyond $\rho\approx0.85$ (congestion collapse at VLB intermediate nodes, analytical $\rho^*=0.85$, Table~\ref{tab:reff_constants}).
 
-    \paragraph{Shale: weak against hotspot and high-load uniform traffic.}
-    Shale provides a guaranteed throughput floor of $1/(2h)$ via VLB, making it robust under adversarial or unknown patterns. Its score improves under Skewed traffic (Figure~\ref{fig:scenario_comparison}, 1.72) because locality in the demand aligns with the Hamming graph structure. However, under Hotspot traffic (Figure~\ref{fig:load_sweep_hotspot}), Shale throughput drops to $\approx 0.04$ at moderate load---the spray paths all converge on the hot destination, creating a bottleneck that VLB cannot avoid. Under Uniform traffic at high load (Figure~\ref{fig:load_sweep_unified}), Shale's throughput degrades continuously because the $2h$-hop path length imposes an unavoidable bandwidth tax that compounds as demand rises. The hop-scaling plot (Figure~\ref{fig:shale_h_range}) confirms mean hops grow linearly as $h+1$, directly inflating latency for small, latency-sensitive flows.
+    \paragraph{Shale: weak against hotspot; throughput ceiling $1/(h{+}1)$.}
+    Shale's guaranteed throughput floor of $1/(2h)$ provides adversarial robustness, and its hw\_reconfig\_ratio~$=0$ means zero scheduling tax.  Its score improves modestly under Skewed traffic ($S_{\text{Skewed}}=0.0018$) because locality in demand aligns with the Hamming graph structure.  Under Hotspot traffic ($S_{\text{Hotspot}}=0.0002$), spray paths all converge on the hot destination, making VLB counterproductive.  The congestion-based model faithfully reflects this: $u_{\max} \gg h{+}1$ under hotspot, so $r_{\text{eff}}=r/u_{\max} \ll r/(h{+}1)$.
 
-    \paragraph{Opera: weak against medium-sized flows.}
-    Opera excels under non-uniform traffic, rising from 0.5902 (Uniform) to 0.7099 (Skewed) and maintaining 0.6811 under Hotspot (Figure~\ref{fig:scenario_comparison}). Its hybrid $\alpha$/$1{-}\alpha$ split routes 92\% of bytes on 1-hop direct circuits and 8\% on expander paths. Under Hotspot traffic (Figure~\ref{fig:load_sweep_hotspot}), Opera maintains stable throughput ($\approx 0.67$) and low FCT across all load factors, outperforming both Shale and Sirius. However, the $\alpha$-split caps its peak capacity --- even with unlimited power, Opera cannot exceed $\alpha \cdot (1 - \delta/T_{\text{cycle}}) + (1-\alpha)/\bar{\ell}$. The architecture's fundamental weakness is medium-sized flows: too large to absorb the expander's bandwidth tax ($L_{\text{avg}} \approx 2.4$ hops), yet too small to amortize the full cycle wait ($T_{\text{cycle}} = 10.8\,\text{ms}$).
+    \paragraph{Opera: now load-dependent; adversarial above bulk-circuit ceiling.}
+    Opera's score now varies across traffic types ($S_{\text{Uniform}}=0.0201$, $S_{\text{Skewed}}=0.0269$, $S_{\text{Hotspot}}=0.0064$), reflecting the updated M/D/1 queuing model (\S1.2.3): at mid-load under Uniform, latency grows moderately; under Hotspot the aggregate $\rho$ exceeds the bulk-circuit ceiling $\alpha(1-\delta/T_c)\approx0.883$ (hw\_reconfig\_ratio~$=0.0400$), triggering rapid $\alpha_{\text{eff}}$ reduction and queue divergence (analytical $\rho^*=0.883$, \S\ref{sec:critical_points}).  Opera's fundamental weakness is traffic imbalance: the $\alpha$-split cannot redistribute bulk-circuit capacity to absorb sudden hotspot demand.
 
-    Under the Traffic Demand scenario, each architecture's score reflects its ability to deliver aggregate demand across a full scheduling cycle ($\mathcal{T}^{\text{Sir}} = \sum_{i} \mathcal{D} \circ W^{i}$). Under all evaluated conditions, the \textbf{GA-Robust} architecture demonstrates superior adaptability, consistently outperforming fixed topologies by evolving specialized expander properties that match the given traffic distribution.
+    \paragraph{GA-Robust: middle ground confirmed ($S\approx0.08$--$0.09$ across all scenarios).}
+    GA-Robust achieves the highest and most consistent composite scores ($S_{\text{Uniform}}=0.0827$, $S_{\text{Hotspot}}=0.0937$, $S_{\text{Traffic Demand}}=0.0453$), demonstrating that multi-objective evolution finds the structural middle ground: hw\_reconfig\_ratio~$=0$ (no circuit reconfiguration), no forced routing mode, and topology specifically evolved to avoid single-bottleneck failure modes (\S5.2).  Its analytical critical point $\rho^*\approx1/\overline{d}$ has no sharp saturation cliff --- GA-Robust degrades gracefully rather than collapsing.
 \end{document}

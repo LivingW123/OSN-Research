@@ -65,24 +65,41 @@ def generate_hotspot_traffic(num_nodes: int, hotspot_nodes: List[int] = None,
     return traffic
 
 
-def generate_skewed_traffic(num_nodes: int, skew_factor: float = 2.0) -> np.ndarray:
+def generate_skewed_traffic(num_nodes: int, skew_factor: float = 2.0,
+                            seed=None) -> np.ndarray:
     """
-    Skewed Traffic Model: Power-law/Zipf-like distribution.
-    
-    Traffic intensity decreases with logical distance between nodes.
-    Represents realistic datacenter traffic patterns.
-    
+    Skewed Traffic Model: Zipf/power-law distribution over randomised node ranks.
+
+    Each source node i draws its destinations in a random rank order; demand
+    to the rank-r destination is  1 / (r^γ + 1).  A fresh random permutation
+    per source is used each call, so different seeds produce spatially varied
+    but statistically equivalent skew patterns.
+
+    Skew ratio (max / min demand per source):
+        ratio = D[i, rank-1] / D[i, rank-(N-1)]
+              = (1+1) / (1/(N-1)^γ + 1)  ≈  (N-1)^γ  for large N.
+        N=9, γ=2.0 → ratio ≈ 64×   (D_near ≈ 0.50, D_far ≈ 0.008)
+        N=9, γ=1.0 → ratio ≈  8×   (D_near ≈ 0.50, D_far ≈ 0.111)
+
+    Distribution: Zipf with exponent γ, rank indexed from 1.
+    Mean demand per source ≈ Σ_{r=1}^{N-1} 1/(r^γ+1) / (N-1).
+
     Args:
-        num_nodes: Number of network nodes N
-        skew_factor: Power-law exponent (higher = more skewed)
+        num_nodes:   Number of network nodes N
+        skew_factor: Zipf exponent γ (≥0; 0 ≈ uniform, 1 = classical Zipf,
+                     2 = quadratic fall-off).  Default 2.0.
+        seed:        RNG seed for node-rank permutation.  None uses the global
+                     numpy state (reproducible when caller sets np.random.seed).
+                     Pass an explicit integer to isolate the pattern from other
+                     random draws.
     """
+    rng = np.random.RandomState(seed) if seed is not None else np.random
     traffic = np.zeros((num_nodes, num_nodes))
     for i in range(num_nodes):
-        for j in range(num_nodes):
-            if i == j: 
-                continue
-            # Closer indices = more traffic (locality pattern)
-            traffic[i, j] = 1.0 / (abs(i - j) ** skew_factor + 1)
+        dests = np.array([j for j in range(num_nodes) if j != i])
+        rng.shuffle(dests)                           # randomise affinity order
+        for rank, j in enumerate(dests, start=1):   # rank ∈ [1, N-1]
+            traffic[i, j] = 1.0 / (rank ** skew_factor + 1)
     return traffic
 
 
@@ -183,6 +200,41 @@ class ArchitectureParams:
 
 
 # =================================================================================
+# SECTION 2b: UNIFIED HARDWARE OVERHEAD
+# =================================================================================
+
+def get_hw_reconfig_ratio(architecture_type: str,
+                          params: 'ArchitectureParams') -> float:
+    """
+    Unified dimensionless reconfiguration overhead  δ / T_slot  for comparison.
+
+    Returns the fraction of link time lost to hardware reconfiguration,
+    expressed on the same scale for every architecture so the three can be
+    compared directly:
+
+        Shale:     0.0000  — oblivious back-to-back timeslot schedule,
+                              no reconfiguration gap (T_slot = 5.632 ns,
+                              δ = 0 ns).
+        Opera:     δ / T_cycle = opera_delta / opera_t_cycle
+                              = 2.0 / 50.0 = 0.0400  (4.00 %)
+                              Physical: δ ≈ 10 µs, T_cycle ≈ 250 µs.
+        Sirius:    δ / T_slot = sirius_delta
+                              = 3.84 ns / 100 ns = 0.0384  (3.84 %)
+        GA-Robust: 0.0000  — static topology, no circuit reconfiguration.
+
+    Note: Opera and Sirius are within 0.16 percentage points of each other,
+    confirming that two very different hardware generations impose nearly
+    identical reconfiguration tax when expressed on this common basis.
+    """
+    if architecture_type == "opera":
+        return params.opera_delta / params.opera_t_cycle
+    elif architecture_type == "sirius":
+        return params.sirius_delta   # already stored as δ / T_slot
+    else:                            # "shale", "genetic", None
+        return 0.0
+
+
+# =================================================================================
 # SECTION 3: CORE CAPACITY CALCULATION
 # =================================================================================
 
@@ -253,7 +305,16 @@ def calculate_topology_capacity(adj_list: List[List[int]],
             return 0, PrimaryMetrics(), SecondaryMetrics()
         return 0
 
-    # 2b. Shale congestion pre-computation (Option C)
+    # 2b. Pre-compute architecture-level quantities used inside the per-flow loop.
+
+    # Opera: normalised offered load ρ (used for load-dependent α_eff / queuing)
+    opera_rho: float = 0.0
+    if architecture_type == "opera":
+        total_demand = float(np.sum(traffic_matrix))
+        opera_rho = total_demand / (num_nodes * (num_nodes - 1)) if num_nodes > 1 else 0.0
+        opera_rho = float(np.clip(opera_rho, 0.0, 1.0))
+
+    # Shale congestion pre-computation (Option C)
     #     Compute u_max and per-flow spray info BEFORE waterfilling
     #     so the per-flow loop can use congestion-based scaling.
     shale_congestion = None
@@ -306,7 +367,8 @@ def calculate_topology_capacity(adj_list: List[List[int]],
             effective_rate, bw_tax, latency = _apply_architecture_model(
                 rate, hops, architecture_type, params,
                 congestion_factor=cong_factor,
-                spray_avg_hops=spray_hops
+                spray_avg_hops=spray_hops,
+                load_rho=opera_rho if architecture_type == "opera" else None
             )
             
             total_capacity += effective_rate
@@ -342,6 +404,22 @@ def calculate_topology_capacity(adj_list: List[List[int]],
             penalty = np.exp(-10 * (load - 0.85))
             total_capacity *= penalty
             total_completion_time /= penalty
+
+    # Opera bulk-ceiling saturation penalty.
+    # The bulk_ceil = α·(1−δ/T_cycle) ≈ 0.8832 is the maximum load the bulk
+    # circuits can sustain.  Above this point the M/D/1 queue for bulk slots
+    # grows super-linearly, causing increasing circuit misses.  We model the
+    # resulting throughput loss with an exponential decay that mirrors the
+    # queue blow-up: penalty = exp(−8·(ρ − bulk_ceil)).
+    #   ρ = bulk_ceil      → penalty = 1.00  (no loss)
+    #   ρ = 0.90           → penalty ≈ 0.88  (−12 %)
+    #   ρ = 0.95           → penalty ≈ 0.59  (−41 %)
+    if architecture_type == "opera" and opera_rho > 0:
+        bulk_ceil_op = params.opera_alpha * (1.0 - params.opera_delta / params.opera_t_cycle)
+        if opera_rho > bulk_ceil_op:
+            penalty = np.exp(-8.0 * (opera_rho - bulk_ceil_op))
+            total_capacity *= penalty
+            total_completion_time /= penalty
     
     if return_metrics:
         # Compute full metrics
@@ -372,13 +450,18 @@ def _apply_architecture_model(rate: float, hops: int,
                               architecture_type: str,
                               params: ArchitectureParams,
                               congestion_factor: float = None,
-                              spray_avg_hops: float = None) -> Tuple[float, float, float]:
+                              spray_avg_hops: float = None,
+                              load_rho: float = None) -> Tuple[float, float, float]:
     """
     Apply architecture-specific capacity model.
 
     For Shale, when congestion_factor (u_max) is provided the throughput
     scales as r / u_max instead of the old r / (h+1).  spray_avg_hops
     drives bandwidth-tax and latency from actual spray paths.
+
+    For Opera, load_rho enables load-dependent queuing latency and the
+    effective bulk-fraction alpha_eff, which decreases above the bulk-circuit
+    capacity ceiling (alpha * (1 - delta/T_cycle)).
 
     Returns: (effective_rate, bandwidth_tax, latency)
     """
@@ -407,18 +490,48 @@ def _apply_architecture_model(rate: float, hops: int,
         
     elif architecture_type == "opera":
         # Opera Hybrid Model (Section 2.2)
-        # 92% Bulk (1-hop) + 8% Short (multi-hop via expander)
+        # Bulk fraction alpha uses direct 1-hop circuits; (1-alpha) uses expander.
+        #
+        # Load-dependent effects (requires load_rho):
+        #   alpha_eff: decreases above the bulk-circuit capacity ceiling
+        #     bulk_ceil = alpha * (1 - δ/T_cycle) ≈ 0.8832
+        #     When rho > bulk_ceil, fraction (rho - bulk_ceil)/rho overflows
+        #     to the expander, reducing effective alpha.
+        #   queuing latency: M/D/1 model for bulk traffic waiting for its slot.
+        #     queue_wait ≈ (rho_bulk * T_cycle) / (2 * (1 - rho_bulk))
+        #     grows rapidly as rho_bulk → 1.
         alpha_split = params.opera_alpha
         delta = params.opera_delta
         t_cycle = params.opera_t_cycle
-        
-        reconfig_eff = 1 - (delta / t_cycle)
-        bulk_rate = alpha_split * rate * reconfig_eff
-        short_rate = (1 - alpha_split) * rate / max(1, hops)
+        rho = load_rho if load_rho is not None else 0.0
+
+        reconfig_eff = 1.0 - (delta / t_cycle)
+        bulk_ceil = alpha_split * reconfig_eff          # ≈ 0.8832
+
+        # Effective alpha: decreases when offered load exceeds bulk capacity
+        if rho > bulk_ceil:
+            overflow_frac = min(1.0, (rho - bulk_ceil) / (rho + 1e-9))
+            alpha_eff = max(alpha_split * (1.0 - overflow_frac * 0.5),
+                            0.5 * alpha_split)
+        else:
+            alpha_eff = alpha_split
+
+        bulk_rate = alpha_eff * rate * reconfig_eff
+        short_rate = (1.0 - alpha_eff) * rate / max(1, hops)
         effective_rate = bulk_rate + short_rate
-        
-        bw_tax = (1 - alpha_split) * (hops - 1) / max(1, hops)  # Tax for short flows
-        latency = hops * delta
+
+        bw_tax = (1.0 - alpha_eff) * (hops - 1) / max(1, hops)
+
+        # Queuing latency: M/D/1 approximation for bulk circuit wait time.
+        # Service time is expressed in the same normalised units as delta (not
+        # T_cycle), so that latency remains comparable across architectures.
+        # At rho_bulk → 1, queue_wait → 5*delta (capped) to avoid divergence.
+        #   rho_bulk=0.0: queue_wait≈0,     latency ≈ hops*delta (base)
+        #   rho_bulk=0.5: queue_wait≈delta, latency grows moderately
+        #   rho_bulk=0.9: queue_wait≈9*delta→capped at 5*delta
+        rho_bulk = min(alpha_split * rho / max(bulk_ceil, 1e-9), 0.98)
+        queue_wait = (rho_bulk * delta) / max(1e-6, 2.0 * (1.0 - rho_bulk))
+        latency = hops * delta + min(queue_wait, delta * 5.0)
         
     elif architecture_type == "sirius":
         # Sirius Static Model (Section 2.3)
@@ -590,6 +703,131 @@ def run_h_sweep(adj_list: List[List[int]],
         results['theoretical_limit'].append(1.0 / (h + 1))
 
     return results
+
+
+# =================================================================================
+# SECTION 4b: ADVERSARIAL CRITICAL POINTS
+# =================================================================================
+
+def find_adversarial_critical_points(
+        adj_list: List[List[int]],
+        architecture_type: str,
+        params: ArchitectureParams = None,
+        total_power: float = 50.0,
+        load_range: List[float] = None,
+        drop_threshold: float = 0.03) -> Dict:
+    """
+    Identify the load factor at which each architecture becomes adversarial.
+
+    Two estimates are returned for each architecture:
+
+    Experimental (simulation-derived)
+        The first load L* where  T(L*) < T(L* - ΔL) - drop_threshold,
+        i.e. throughput drops by more than drop_threshold in one step.
+        Evaluated under Uniform, Skewed, and Adversarial traffic.
+
+    Analytical (closed-form)
+        Sirius:  ρ* = 0.85  — onset of exp(-10(ρ-0.85)) load penalty;
+                              queue divergence at VLB intermediate nodes.
+        Opera:   ρ* = α·(1-δ/T_c)  — bulk-circuit capacity ceiling;
+                              above this, overflow to expander increases tax
+                              and queuing latency grows steeply (M/D/1).
+        Shale:   ρ* = 1/(h+1)  — VLB throughput ceiling; further load
+                              only deepens queue, no extra throughput.
+        GA-Robust: ρ* ≈ 1/ASPL — expander capacity ceiling based on
+                              average shortest path length.
+
+    Returns dict with keys:
+        analytical_critical, reasoning, hw_overhead,
+        exp_critical_{uniform,skewed,adversarial},
+        sweep_{uniform,skewed,adversarial}  (full run_load_sweep dicts)
+    """
+    if load_range is None:
+        load_range = np.linspace(0.05, 0.97, 25).tolist()
+    if params is None:
+        params = ArchitectureParams()
+
+    num_nodes = len(adj_list)
+
+    # ── Experimental sweeps ──────────────────────────────────────────
+    sweeps = {}
+    exp_critical = {}
+    for ttype_key, ttype in [('uniform',    TrafficType.UNIFORM),
+                              ('skewed',     TrafficType.SKEWED),
+                              ('adversarial', TrafficType.ADVERSARIAL)]:
+        sw = run_load_sweep(adj_list, architecture_type, ttype,
+                            load_range, params, total_power)
+        sweeps[ttype_key] = sw
+        tp = sw['throughput']
+        # Critical point: capacity ceiling < offered load by more than drop_threshold.
+        # In the waterfilling model, throughput is approximately constant (the capacity
+        # ceiling of the architecture); the network becomes adversarial at the first
+        # load L where  L > throughput_ceiling + drop_threshold, i.e. delivered < offered.
+        # Also detect an outright throughput drop (Sirius exponential collapse).
+        ceiling = max(tp[:max(1, len(tp)//2)])   # estimate ceiling from lower loads
+        crit = None
+        for k, L in enumerate(load_range):
+            if tp[k] < tp[k - 1] - drop_threshold:   # sharp collapse
+                crit = L
+                break
+            if L > ceiling + drop_threshold:          # load exceeds capacity
+                crit = L
+                break
+        exp_critical[ttype_key] = crit
+
+    # ── Analytical estimate ──────────────────────────────────────────
+    hw_ratio = get_hw_reconfig_ratio(architecture_type, params)
+
+    if architecture_type == "sirius":
+        analytical = 0.85
+        reasoning = (
+            "Queue divergence at VLB intermediate nodes. "
+            "The load penalty C_load(ρ) = exp(-10(ρ-0.85)) activates at ρ=0.85, "
+            "causing exponential throughput collapse. "
+            f"hw_reconfig_ratio = {hw_ratio:.4f}."
+        )
+    elif architecture_type == "opera":
+        bulk_ceil = params.opera_alpha * (1.0 - params.opera_delta / params.opera_t_cycle)
+        analytical = round(bulk_ceil, 4)
+        reasoning = (
+            f"Bulk-circuit capacity ceiling α·(1-δ/T_c) = {analytical:.4f}. "
+            "Above this load, bulk circuits are fully booked; overflow traffic "
+            "is forced onto the expander, increasing bandwidth tax and triggering "
+            "M/D/1 queuing growth. "
+            f"hw_reconfig_ratio = {hw_ratio:.4f}."
+        )
+    elif architecture_type == "shale":
+        analytical = round(1.0 / (params.shale_h + 1), 4)
+        reasoning = (
+            f"VLB throughput ceiling 1/(h+1) = {analytical:.4f} for h={params.shale_h}. "
+            "Beyond this load the network is congestion-limited; additional offered "
+            "load only builds queue depth without increasing delivered throughput. "
+            f"hw_reconfig_ratio = {hw_ratio:.4f} (zero — no reconfiguration)."
+        )
+    else:
+        # GA-Robust / generic: derive from ASPL
+        dist = _get_all_pairs_dist(adj_list, num_nodes)
+        finite = dist[(dist != float('inf')) & (dist != 0)]
+        aspl = float(np.mean(finite)) if len(finite) > 0 else float('inf')
+        analytical = round(1.0 / aspl, 4) if aspl > 0 else 0.0
+        reasoning = (
+            f"Expander capacity ceiling ≈ 1/ASPL = {analytical:.4f} "
+            f"(ASPL = {aspl:.3f} hops). "
+            "The topology has no reconfiguration overhead (hw_reconfig_ratio = 0), "
+            "so the only ceiling is the multi-hop bandwidth tax."
+        )
+
+    return {
+        'analytical_critical':        analytical,
+        'reasoning':                  reasoning,
+        'hw_overhead':                hw_ratio,
+        'exp_critical_uniform':       exp_critical['uniform'],
+        'exp_critical_skewed':        exp_critical['skewed'],
+        'exp_critical_adversarial':   exp_critical['adversarial'],
+        'sweep_uniform':              sweeps['uniform'],
+        'sweep_skewed':               sweeps['skewed'],
+        'sweep_adversarial':          sweeps['adversarial'],
+    }
 
 
 # =================================================================================

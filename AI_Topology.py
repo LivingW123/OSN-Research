@@ -97,11 +97,38 @@ def genome_to_adj(genome, num_nodes, frozen_backbone=None):
             idx += 1
     return [list(x) for x in adj]
 
-def evolve_topology(num_nodes, target_degree, population_size=15, generations=50, 
+def evolve_topology(num_nodes, target_degree, population_size=15, generations=50,
                     traffic_type="uniform", frozen_backbone=None):
     """
     Evolves a network topology using PyGAD.
     Optimizes for a mix of minimizing ASPL and maximizing delivered capacity.
+
+    GA-Robust definition (traffic_type="robust")
+    ─────────────────────────────────────────────
+    When traffic_type="robust", candidates are evaluated against the full
+    suite  {Uniform, Skewed, Hotspot}  simultaneously.  The fitness is the
+    average capacity across all three, penalised by ASPL and degree spread.
+
+    The evolved topology is a STATIC graph (no circuit reconfiguration), so:
+        hw_reconfig_ratio = 0.0          — zero reconfiguration overhead
+        (cf. Opera 0.04, Sirius 0.0384)
+
+    This is the key reason GA-Robust finds a middle ground:
+      • Better than Shale  under uniform/adversarial: shorter ASPL → better
+        per-hop efficiency and no 2h-path bandwidth tax from VLB.
+      • Better than Sirius under hotspot: topology was evolved to avoid
+        single points of VLB convergence; no 2-hop mandate.
+      • More flexible than Opera: not constrained by the α/1−α bulk split;
+        any src-dst pair can use any available path at any time.
+      • Equal or better hw_overhead: 0.0 < Opera 0.04 ≈ Sirius 0.0384.
+
+    Fitness:
+        F = 0.1 · avg_capacity(W, {Uniform, Skewed, Hotspot})
+          + 10 / ASPL(W)
+          − [λ₁ · |avg_degree − D| + λ₂ · Var(degrees)]
+    where λ₁=5, λ₂=2, D=target_degree.
+    The capacity weight (0.1) is intentionally small so ASPL dominates;
+    a topology with short paths serves ALL traffic patterns well.
     """
 
     print(f"AI Evolving Topology (PyGAD) (N={num_nodes}, D={target_degree}, Traffic={traffic_type})...")

@@ -35,6 +35,7 @@ from Traffic_Benchmarks import (
     generate_adversarial_traffic, ArchitectureParams,
     run_load_sweep, run_h_sweep,
     compute_benchmark_score, TrafficType,
+    find_adversarial_critical_points, get_hw_reconfig_ratio,
     _get_all_pairs_dist,
 )
 
@@ -165,9 +166,11 @@ def _plot_wf(noise, alloc, wl, title, fname, show_bottleneck=False):
 # ====================================================================
 print("\n3-panel waterfilling figures …")
 
+# Skew seed=42 → reproducible spatial pattern for the 3-panel waterfilling;
+# different seeds produce different locality structures (same Zipf distribution).
 _traffic_panels = [
     ('Uniform',  generate_uniform_traffic(N) * 0.5),
-    ('Skewed',   generate_skewed_traffic(N) * 0.5),
+    ('Skewed',   generate_skewed_traffic(N, skew_factor=2.0, seed=42) * 0.5),
     ('Hotspot',  generate_hotspot_traffic(N) * 0.5),
 ]
 
@@ -365,25 +368,47 @@ _plot_wf(n, a, w, 'Opera Rigorous Waterfilling', 'opera_rigorous.png',
 n, a, w = _build_wf_data(opera_adj, uni * 0.25, total_power=25)
 _plot_wf(n, a, w, 'Opera Low-Latency Waterfilling', 'opera_low_latency.png')
 
-# ── opera_efficiency_report (2-panel) ─────────────────────────────────
+# ── opera_efficiency_report (3-panel) ─────────────────────────────────
 loads_fine = np.linspace(0.05, 0.95, 15).tolist()
 opera_sweep = run_load_sweep(opera_adj, 'opera', TrafficType.UNIFORM,
                              load_range=loads_fine, total_power=POWER)
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+_op = ArchitectureParams()
+_bulk_ceil = _op.opera_alpha * (1.0 - _op.opera_delta / _op.opera_t_cycle)  # ≈ 0.8832
 
-ax1.plot(loads_fine, [bt * 100 for bt in opera_sweep['bandwidth_tax']],
-         'o-', color=C_OPERA)
-ax1.set_xlabel('Network Load (fraction of capacity)')
-ax1.set_ylabel('Bandwidth Tax (%)')
-ax1.set_title('Bandwidth Tax vs Load')
+fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(16, 5))
+
+# Panel 1: Throughput vs Load
+ax1.plot(loads_fine, opera_sweep['throughput'], 'o-', color=C_OPERA,
+         label='Effective Throughput')
+ax1.axvline(_bulk_ceil, color='#E53935', ls='--', lw=1.5,
+            label=f'Bulk Ceiling ρ*={_bulk_ceil:.3f}')
+ax1.set_xlabel('Network Load ρ (fraction of capacity)')
+ax1.set_ylabel('Normalized Throughput (fraction of line rate)')
+ax1.set_title('Throughput vs Load\n(degrades above bulk ceiling)')
+ax1.legend(fontsize=8)
 ax1.grid(alpha=.3)
 
-ax2.plot(loads_fine, opera_sweep['latency_mean'], 'o-', color=C_OPERA)
-ax2.set_xlabel('Network Load (fraction of capacity)')
-ax2.set_ylabel('Avg Latency (normalized cycles)')
-ax2.set_title('Latency vs Load')
+# Panel 2: Bandwidth Tax vs Load
+ax2.plot(loads_fine, [bt * 100 for bt in opera_sweep['bandwidth_tax']],
+         'o-', color=C_OPERA)
+ax2.axvline(_bulk_ceil, color='#E53935', ls='--', lw=1.5,
+            label=f'ρ*={_bulk_ceil:.3f}')
+ax2.set_xlabel('Network Load ρ (fraction of capacity)')
+ax2.set_ylabel('Bandwidth Tax (%)')
+ax2.set_title('Bandwidth Tax vs Load\n(rises as α_eff drops)')
+ax2.legend(fontsize=8)
 ax2.grid(alpha=.3)
+
+# Panel 3: Latency vs Load  (M/D/1 queuing effect)
+ax3.plot(loads_fine, opera_sweep['latency_mean'], 'o-', color=C_OPERA)
+ax3.axvline(_bulk_ceil, color='#E53935', ls='--', lw=1.5,
+            label=f'ρ*={_bulk_ceil:.3f}')
+ax3.set_xlabel('Network Load ρ (fraction of capacity)')
+ax3.set_ylabel('Avg Latency (normalized cycles)')
+ax3.set_title('Latency vs Load\n(M/D/1 queue blow-up)')
+ax3.legend(fontsize=8)
+ax3.grid(alpha=.3)
 
 plt.tight_layout()
 plt.savefig(os.path.join(IMG_DIR, 'opera_efficiency_report.png'),
@@ -392,21 +417,36 @@ plt.close()
 print("  ✓ opera_efficiency_report.png")
 
 # ── opera_wf_throughput_vs_load ──────────────────────────────────────
+# Delivered throughput = min(effective_capacity, offered_load).
+# Below the bulk ceiling, throughput tracks offered load linearly.
+# Above ρ* = bulk_ceil, bulk circuits saturate → throughput degrades.
 fig, ax = plt.subplots(figsize=(8, 5))
+
+cap_at_ceil = opera_sweep['throughput'][0]   # peak capacity (low-load, no penalty)
 opera_delivered = [min(t, L) for t, L in zip(opera_sweep['throughput'], loads_fine)]
-cap = max(opera_sweep['throughput']) if opera_sweep['throughput'] else 0
-opera_ideal = [min(L, cap) for L in loads_fine]
-ax.plot(loads_fine, opera_delivered, 'o-', color=C_OPERA,
+opera_ideal     = [min(L, cap_at_ceil) for L in loads_fine]
+
+ax.plot(loads_fine, opera_delivered, 'o-', color=C_OPERA, lw=2,
         label='Delivered Throughput')
 ax.plot(loads_fine, opera_ideal, '--', color='gray',
-        label=f'Ideal (cap={cap:.3f})')
-ax.axhline(cap, ls=':', color='#E53935',
-           label=f'Capacity Ceiling ({cap:.3f})')
-ax.set_xlabel('Offered Load (fraction of line rate)')
+        label=f'Ideal (no saturation, cap={cap_at_ceil:.3f})')
+ax.plot(loads_fine, opera_sweep['throughput'], 's:', color='#7B1FA2',
+        markersize=4, lw=1, label='Effective Capacity Ceiling')
+ax.axvline(_bulk_ceil, color='#E53935', ls='--', lw=1.5,
+           label=f'Bulk Ceiling ρ*={_bulk_ceil:.3f}  (hw_ovhd={_op.opera_delta/_op.opera_t_cycle:.4f})')
+
+# Shade the saturation region
+ax.axvspan(_bulk_ceil, 1.0, alpha=0.07, color='#E53935',
+           label='Bulk-circuit saturation zone')
+
+ax.set_xlabel('Offered Load ρ (fraction of line rate)')
 ax.set_ylabel('Throughput (fraction of line rate)')
-ax.set_title('Opera Throughput vs Offered Load')
+ax.set_title('Opera: Throughput vs Offered Load\n'
+             '(M/D/1 bulk-circuit saturation above ρ*)')
 ax.legend(fontsize=8)
 ax.grid(alpha=.3)
+ax.set_xlim(0, 1.0)
+ax.set_ylim(0, None)
 plt.tight_layout()
 plt.savefig(os.path.join(IMG_DIR, 'opera_wf_throughput_vs_load.png'),
             dpi=DPI, bbox_inches='tight')
@@ -496,7 +536,11 @@ print("\nCross-architecture benchmarks …")
 arch_names  = ['opera', 'shale', 'sirius', 'genetic']
 arch_labels = ['Opera', 'Shale RR2', 'Sirius', 'GA-Robust']
 arch_colors = [C_OPERA, C_SHALE, C_SIRIUS, C_GENETIC]
-arch_types  = ['opera', 'shale', 'sirius', None]  # genetic has no model
+# GA-Robust uses the generic expander model (arch_type=None):
+#   hw_reconfig_ratio = 0.0  → no reconfiguration overhead
+#   r_eff = r / hops,  bw_tax = 1 - 1/hops,  latency = hops
+# This is the middle-ground architecture between Opera/Sirius/Shale.
+arch_types  = ['opera', 'shale', 'sirius', None]
 
 traffic_scenarios = {
     'uniform':        (TrafficType.UNIFORM,  'Uniform'),
@@ -549,7 +593,7 @@ for scen_key, (ttype, scen_label) in traffic_scenarios.items():
     if ttype == TrafficType.UNIFORM:
         tm = generate_uniform_traffic(N) * 0.5
     elif ttype == TrafficType.SKEWED:
-        tm = generate_skewed_traffic(N) * 0.5
+        tm = generate_skewed_traffic(N, skew_factor=2.0, seed=42) * 0.5
     elif ttype == TrafficType.HOTSPOT:
         tm = generate_hotspot_traffic(N) * 0.5
     else:
@@ -589,7 +633,7 @@ print("  ✓ benchmark_scenario_comparison.png")
 power_range = np.linspace(20, 100, 8).tolist()
 panel_traffics = [
     ('Uniform', generate_uniform_traffic(N) * 0.5),
-    ('Skewed',  generate_skewed_traffic(N) * 0.5),
+    ('Skewed',  generate_skewed_traffic(N, skew_factor=2.0, seed=42) * 0.5),
     ('Hotspot', generate_hotspot_traffic(N) * 0.5),
 ]
 
@@ -630,4 +674,53 @@ for figobj, fname in [(fig_cap, 'traffic_benchmark_capacity.png'),
 
 
 # ====================================================================
-print(f"\nDone — {23} figures written to {IMG_DIR}/")
+# 9.  ADVERSARIAL CRITICAL POINTS
+# ====================================================================
+print("\nAdversarial critical-points sweep …")
+
+crit_load_range = np.linspace(0.05, 0.97, 25).tolist()
+fig_crit, axes_crit = plt.subplots(1, 3, figsize=(16, 5), sharey=False)
+titles_crit = ['Uniform', 'Skewed', 'Adversarial']
+
+hw_labels = {
+    'opera':   f"Opera  hw_ovhd={get_hw_reconfig_ratio('opera', ArchitectureParams()):.4f}",
+    'shale':   f"Shale  hw_ovhd={get_hw_reconfig_ratio('shale', ArchitectureParams()):.4f}",
+    'sirius':  f"Sirius hw_ovhd={get_hw_reconfig_ratio('sirius', ArchitectureParams()):.4f}",
+    'genetic': f"GA-Robust hw_ovhd={get_hw_reconfig_ratio(None, ArchitectureParams()):.4f}",
+}
+
+for i, (aname, atype, acolor, alabel) in enumerate(
+        zip(arch_names, arch_types, arch_colors, arch_labels)):
+    crit = find_adversarial_critical_points(
+        TOPOS[aname], atype,
+        load_range=crit_load_range, total_power=POWER)
+
+    for pi, sweep_key in enumerate(['sweep_uniform', 'sweep_skewed', 'sweep_adversarial']):
+        sw = crit[sweep_key]
+        axes_crit[pi].plot(crit_load_range, sw['throughput'], 'o-',
+                           color=acolor, label=alabel, markersize=3)
+        # Mark experimental critical point with a vertical line
+        ec = crit[f'exp_critical_{["uniform","skewed","adversarial"][pi]}']
+        if ec is not None:
+            axes_crit[pi].axvline(ec, color=acolor, ls=':', lw=1.5, alpha=0.7)
+
+    # Annotate analytical critical point on the uniform panel
+    ac = crit['analytical_critical']
+    axes_crit[0].axvline(ac, color=acolor, ls='--', lw=1.0, alpha=0.5)
+
+for pi, title in enumerate(titles_crit):
+    axes_crit[pi].set_xlabel('Load Factor (ratio)')
+    axes_crit[pi].set_title(f'Throughput — {title}\n'
+                            f'(dashed = analytical ρ*, dotted = experimental ρ*)')
+    axes_crit[pi].legend(fontsize=6)
+    axes_crit[pi].grid(alpha=.3)
+axes_crit[0].set_ylabel('Normalized Throughput (fraction of line rate)')
+
+fig_crit.tight_layout()
+fig_crit.savefig(os.path.join(IMG_DIR, 'adversarial_critical_points.png'),
+                 dpi=DPI, bbox_inches='tight')
+plt.close(fig_crit)
+print("  ✓ adversarial_critical_points.png")
+
+# ====================================================================
+print(f"\nDone — {24} figures written to {IMG_DIR}/")
