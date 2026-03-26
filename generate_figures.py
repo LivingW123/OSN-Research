@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 _real = sys.stdout
 sys.stdout = io.StringIO()
 
-from shale_alg import RR2
+from Shale_Alg import RR2
 from Waterfilling_Alg import waterfilling
 from Common_Alg import generate_random_latin_square
 from AI_Topology import generate_random_topology, calculate_aspl

@@ -1,18 +1,18 @@
-Architecture    | Scenario        | Throughput | Score     
+Architecture    | Scenario        | Throughput |      Score
 ------------------------------------------------------------
-Opera           | Uniform         |     0.5943 |     0.5902
-Shale           | Uniform         |     0.2170 |     0.4103
-Sirius          | Uniform         |     0.8495 |     0.6852
-Genetic         | Uniform         |     0.9063 |     0.8188
-Opera           | Skewed          |     0.8395 |     0.7099
-Shale           | Skewed          |     0.3547 |     0.4802
-Sirius          | Skewed          |     0.8495 |     0.6852
-Genetic         | Skewed          |     1.1550 |     0.9611
-Opera           | Hotspot         |     0.7805 |     0.6811
-Shale           | Hotspot         |     0.2170 |     0.4103
-Sirius          | Hotspot         |     0.8495 |     0.6852
-Genetic         | Hotspot         |     0.9716 |     0.8561
-Opera           | Traffic Demand  |     0.5943 |     0.5902
-Shale           | Traffic Demand  |     0.2170 |     0.4103
-Sirius          | Traffic Demand  |     0.8495 |     0.6852
-Genetic         | Traffic Demand  |     0.9063 |     0.8188
+Opera           | Uniform         |     0.6659 |     0.0201
+Opera           | Skewed          |     0.6659 |     0.0269
+Opera           | Hotspot         |     0.2622 |     0.0022
+Opera           | Traffic Demand  |     0.5577 |     0.0321
+Shale           | Uniform         |     0.3268 |     0.0015
+Shale           | Skewed          |     0.4005 |     0.0018
+Shale           | Hotspot         |     0.0613 |     0.0002
+Shale           | Traffic Demand  |     0.0606 |     0.0004
+Sirius          | Uniform         |     0.6222 |     0.0339
+Sirius          | Skewed          |     0.6222 |     0.0339
+Sirius          | Hotspot         |     0.0009 |     0.0000
+Sirius          | Traffic Demand  |     0.5211 |     0.0577
+Genetic         | Uniform         |     1.1141 |     0.0878
+Genetic         | Skewed          |     1.0285 |     0.0810
+Genetic         | Hotspot         |     1.0326 |     0.0814
+Genetic         | Traffic Demand  |     0.6761 |     0.0386
