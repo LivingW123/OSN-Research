@@ -278,17 +278,28 @@ class ArchitectureParams:
     Sirius: η (efficiency), slot duration, reconfig time
     """
     # Shale VLB Parameters (Section 2.1)
+    # Guard-band overhead (~9 %, 4.096 ns of 45.056 ns slot) is already
+    # folded into the 1/(2h) throughput bound and is not modelled as a
+    # separate duty-cycle loss.  (Shale SIGCOMM'24, Amir et al., §5.)
     shale_h: int = 2                    # Spray depth h ∈ {1,2,4,6,8,12}
     shale_epoch: int = 15               # Epoch length E
     
     # Opera Hybrid Parameters (Section 2.2)
+    # opera_alpha: byte-fraction of traffic routed over direct (bulk) paths.
+    # Opera NSDI'20 §4.1 classifies flows ≥15 MB as bulk; the Datamining
+    # workload (Fig. 1) shows ~92 % of *bytes* fall in this category,
+    # giving α ≈ 0.92.  (Opera NSDI'20, Mellette et al., §5.1 / Fig. 7.)
     opera_alpha: float = 0.92           # Bulk fraction (92% bulk)
     opera_delta: float = 2.0            # Reconfiguration delay δ
     opera_t_cycle: float = 50.0         # Cycle time T_cycle
-    
+
     # Sirius Static Parameters (Section 2.3)
-    sirius_delta: float = 0.0384        # Reconfig ratio δ/T_slot (3.84ns / 100ns)
-    sirius_eta: float = 0.9616          # Efficiency 1 - δ/T_slot
+    # Sirius SIGCOMM'20 §6 uses 90 ns transmission slots with a 10 ns
+    # guardband (100 ns total), giving an operational overhead of 10 %.
+    # The raw hardware switching time is 3.84 ns, but the paper
+    # "conservatively" sets the guardband to 10 ns (Ballani et al., §7).
+    sirius_delta: float = 0.10          # Operational guardband ratio 10ns / 100ns
+    sirius_eta: float = 0.90            # Efficiency 1 - δ/T_slot
 
 
 # =================================================================================
@@ -304,19 +315,22 @@ def get_hw_reconfig_ratio(architecture_type: str,
     expressed on the same scale for every architecture so the three can be
     compared directly:
 
-        Shale:     0.0000  — oblivious back-to-back timeslot schedule,
-                              no reconfiguration gap (T_slot = 5.632 ns,
-                              δ = 0 ns).
+        Shale:     0.0000  — oblivious back-to-back timeslot schedule;
+                              the ~9 % guard-band (4.096 / 45.056 ns) is
+                              already absorbed by the 1/(2h) throughput
+                              bound and is not a separate duty-cycle loss.
+                              (Shale SIGCOMM'24, Amir et al., §5.)
         Opera:     δ / T_cycle = opera_delta / opera_t_cycle
                               = 2.0 / 50.0 = 0.0400  (4.00 %)
                               Physical: δ ≈ 10 µs, T_cycle ≈ 250 µs.
+                              (Opera NSDI'20, Mellette et al., §4.1.)
         Sirius:    δ / T_slot = sirius_delta
-                              = 3.84 ns / 100 ns = 0.0384  (3.84 %)
+                              = 10 ns / 100 ns = 0.1000  (10.00 %)
+                              The raw hardware switching time is only
+                              3.84 ns, but the paper conservatively sets
+                              the operational guardband to 10 ns.
+                              (Sirius SIGCOMM'20, Ballani et al., §7.)
         GA-Robust: 0.0000  — static topology, no circuit reconfiguration.
-
-    Note: Opera and Sirius are within 0.16 percentage points of each other,
-    confirming that two very different hardware generations impose nearly
-    identical reconfiguration tax when expressed on this common basis.
     """
     if architecture_type == "opera":
         return params.opera_delta / params.opera_t_cycle
@@ -411,7 +425,7 @@ def calculate_topology_capacity(adj_list: List[List[int]],
     #     so the per-flow loop can use congestion-based scaling.
     shale_congestion = None
     if architecture_type == "shale":
-        from shale_alg import compute_spray_congestion
+        from Shale_Alg import compute_spray_congestion
         flow_demands_list = [
             (src, dst, demands[idx])
             for idx, (src, dst, _) in enumerate(flow_metas)
