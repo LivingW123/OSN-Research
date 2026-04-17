@@ -24,7 +24,10 @@ sys.stdout = io.StringIO()
 from Shale_Alg import RR2
 from Waterfilling_Alg import waterfilling
 from Common_Alg import generate_random_latin_square
-from AI_Topology import generate_random_topology, calculate_aspl
+from AI_Topology import (
+    generate_random_topology, calculate_aspl,
+    evolve_topology, evolve_topology_fct, evolve_topology_dynamic,
+)
 from Sirius import SiriusGen
 
 sys.stdout = _real
@@ -51,13 +54,16 @@ np.random.seed(42)
 random.seed(42)
 
 # Architecture colours (consistent across all figures)
-C_OPERA   = '#2196F3'
-C_SHALE   = '#4CAF50'
-C_SIRIUS  = '#FF9800'
-C_GENETIC = '#9C27B0'
+C_OPERA     = '#2196F3'
+C_SHALE     = '#4CAF50'
+C_SIRIUS    = '#FF9800'
+C_GENETIC   = '#9C27B0'   # GA-Robust
+C_GA_FCT    = '#E91E63'   # GA-FCT (magenta)
+C_GA_DYN    = '#009688'   # GA-Dynamic (teal)
 
 ARCH_COLORS = {'opera': C_OPERA, 'shale': C_SHALE,
-               'sirius': C_SIRIUS, 'genetic': C_GENETIC}
+               'sirius': C_SIRIUS, 'genetic': C_GENETIC,
+               'ga_fct': C_GA_FCT, 'ga_dyn': C_GA_DYN}
 
 
 # ====================================================================
@@ -80,17 +86,60 @@ sirius_src = SiriusGen(N)
 sys.stdout = _s
 sirius_adj = [sirius_src[i] for i in range(N)]
 
-# Genetic: retry until connected
-for _ in range(20):
-    genetic_adj = generate_random_topology(N, 4)
-    if calculate_aspl(genetic_adj) < float('inf'):
-        break
+# ── GA-evolved topologies (cached so repeated figure runs don't re-evolve) ──
+import json, pathlib
+_GA_CACHE = pathlib.Path(IMG_DIR) / '_ga_cache.json'
+
+def _load_or_evolve():
+    if _GA_CACHE.exists():
+        try:
+            with open(_GA_CACHE) as f:
+                data = json.load(f)
+            if all(k in data for k in ('ga_robust', 'ga_fct', 'ga_dyn')):
+                print("  (loading GA topologies from cache)")
+                return (data['ga_robust'], data['ga_fct'], data['ga_dyn'])
+        except Exception:
+            pass
+
+    _s = sys.stdout; sys.stdout = io.StringIO()
+    ga_robust = evolve_topology(N, 4, population_size=25, generations=40,
+                                traffic_type="robust")
+    ga_fct    = evolve_topology_fct(N, 4, population_size=25, generations=40,
+                                    traffic_type="robust")
+    ga_dyn, _routes, _paths = evolve_topology_dynamic(
+        N, 4, population_size=25, generations=40, K_paths=3,
+        traffic_type="robust", seed=42)
+    sys.stdout = _s
+
+    with open(_GA_CACHE, 'w') as f:
+        json.dump({'ga_robust': ga_robust, 'ga_fct': ga_fct, 'ga_dyn': ga_dyn}, f)
+    return ga_robust, ga_fct, ga_dyn
+
+
+print("Evolving GA-Robust, GA-FCT, GA-Dynamic (may take a minute) …")
+genetic_adj, ga_fct_adj, ga_dyn_adj = _load_or_evolve()
+
+# Ensure connectivity fallback for any failed evolution
+def _ensure_connected(adj, label):
+    if calculate_aspl(adj) == float('inf'):
+        print(f"  ! {label} evolved disconnected; falling back to random")
+        for _ in range(20):
+            rnd = generate_random_topology(N, 4)
+            if calculate_aspl(rnd) < float('inf'):
+                return rnd
+    return adj
+
+genetic_adj = _ensure_connected(genetic_adj, 'GA-Robust')
+ga_fct_adj  = _ensure_connected(ga_fct_adj,  'GA-FCT')
+ga_dyn_adj  = _ensure_connected(ga_dyn_adj,  'GA-Dynamic')
 
 TOPOS = {
     'opera':   opera_adj,
     'shale':   shale_adj,
     'sirius':  sirius_adj,
     'genetic': genetic_adj,
+    'ga_fct':  ga_fct_adj,
+    'ga_dyn':  ga_dyn_adj,
 }
 
 for name, adj in TOPOS.items():
@@ -535,14 +584,18 @@ _plot_wf(n, a, w, 'GA-Evolved Low-Latency Waterfilling',
 # ====================================================================
 print("\nCross-architecture benchmarks …")
 
-arch_names  = ['opera', 'shale', 'sirius', 'genetic']
-arch_labels = ['Opera', 'Shale RR2', 'Sirius', 'GA-Robust']
-arch_colors = [C_OPERA, C_SHALE, C_SIRIUS, C_GENETIC]
-# GA-Robust uses the generic expander model (arch_type=None):
+arch_names  = ['opera', 'shale', 'sirius', 'genetic', 'ga_fct', 'ga_dyn']
+arch_labels = ['Opera', 'Shale RR2', 'Sirius',
+               'GA-Robust', 'GA-FCT', 'GA-Dynamic']
+arch_colors = [C_OPERA, C_SHALE, C_SIRIUS, C_GENETIC, C_GA_FCT, C_GA_DYN]
+# GA-* architectures all use the generic expander model (arch_type=None):
 #   hw_reconfig_ratio = 0.0  → no reconfiguration overhead
 #   r_eff = r / hops,  bw_tax = 1 - 1/hops,  latency = hops
-# This is the middle-ground architecture between Opera/Sirius/Shale.
-arch_types  = ['opera', 'shale', 'sirius', None]
+# GA-Robust, GA-FCT, GA-Dynamic differ only in the evolved topology; the
+# capacity-evaluation routing is shortest-path for all three here.  The
+# routing-aware GA-Dynamic advantage is therefore undercounted in these
+# plots (see discussion in \S 5.3 of main.tex).
+arch_types  = ['opera', 'shale', 'sirius', None, None, None]
 
 traffic_scenarios = {
     'uniform':        (TrafficType.UNIFORM,  'Uniform'),
