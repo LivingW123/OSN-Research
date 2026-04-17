@@ -538,23 +538,34 @@ def calculate_topology_capacity(adj_list: List[List[int]],
             if opera_col_loads is not None and dst < len(opera_col_loads):
                 dst_load_ratio = float(opera_col_loads[dst])
 
-            effective_rate, bw_tax, latency = _apply_architecture_model(
+            effective_rate, bw_tax, latency, fct_wait = _apply_architecture_model(
                 rate, hops, architecture_type, params,
                 congestion_factor=cong_factor,
                 spray_avg_hops=spray_hops,
                 load_rho=opera_rho if architecture_type == "opera" else None,
                 dest_load_ratio=dst_load_ratio,
             )
-            
+
             total_capacity += effective_rate
             total_hops += hops
             total_bandwidth_tax += bw_tax
             active_flows += 1
             latencies.append(latency)
-            
-            # Flow Completion Time = Volume / Rate
+
+            # Flow Completion Time = Volume / Rate  + per-flow bulk-circuit wait (Opera).
+            # Opera NSDI'20 §4.1: bulk flows (alpha fraction) wait for a direct
+            # circuit before service begins; the M/D/1 wait time diverges as
+            # the per-destination bulk load rho_dest -> 1.  The fct_wait term
+            # is non-zero only for Opera; other architectures return 0 and
+            # the FCT formula reduces to demand/rate as before.
             if effective_rate > 1e-9:
-                total_completion_time += demand / effective_rate
+                bulk_wait_contribution = 0.0
+                if architecture_type == "opera" and fct_wait > 0.0:
+                    # Only the alpha fraction of the flow goes through the bulk
+                    # circuit (and thus pays the rotor-schedule wait); the rest
+                    # traverses the expander immediately.
+                    bulk_wait_contribution = params.opera_alpha * fct_wait
+                total_completion_time += demand / effective_rate + bulk_wait_contribution
             else:
                 inactive_flows.append(demand)
         else:
@@ -631,7 +642,7 @@ def _apply_architecture_model(rate: float, hops: int,
                               congestion_factor: float = None,
                               spray_avg_hops: float = None,
                               load_rho: float = None,
-                              dest_load_ratio: float = 1.0) -> Tuple[float, float, float]:
+                              dest_load_ratio: float = 1.0) -> Tuple[float, float, float, float]:
     """
     Apply architecture-specific capacity model.
 
@@ -644,10 +655,16 @@ def _apply_architecture_model(rate: float, hops: int,
     capacity ceiling (alpha * (1 - delta/T_cycle)).  dest_load_ratio scales
     the per-flow queuing by the destination's relative ingress load so that
     flows to hotspot destinations see proportionally higher M/D/1 wait times
-    (Opera NSDI'20 §4.1 / Fig. 7).
+    (Opera NSDI'20 §4.1 / Fig. 7).  The returned fct_wait is the M/D/1
+    queueing wait at scale T_cycle; callers should add alpha * fct_wait to
+    each Opera flow's FCT contribution (Opera NSDI'20 §4.1: bulk flows wait
+    for a direct circuit on the rotor schedule before service begins).
 
-    Returns: (effective_rate, bandwidth_tax, latency)
+    Returns: (effective_rate, bandwidth_tax, latency, fct_wait)
     """
+    # Default: architectures other than Opera contribute zero FCT queue wait
+    fct_wait = 0.0
+
     if architecture_type == "shale":
         # Shale VLB Model — congestion-based (Option C)
         # Each cell takes h spray hops + h direct hops = 2h total.
@@ -670,7 +687,7 @@ def _apply_architecture_model(rate: float, hops: int,
         bw_tax = 1.0 - (1.0 / total_path) if total_path > 1 else 0.0
         # Latency uses the logical path length h+1 (not graph shortest path)
         latency = gamma * (h + 1) + beta_0
-        
+
     elif architecture_type == "opera":
         # Opera Hybrid Model (Section 2.2)
         # Bulk fraction alpha uses direct 1-hop circuits; (1-alpha) uses expander.
@@ -726,7 +743,18 @@ def _apply_architecture_model(rate: float, hops: int,
         rho_dest = min(rho_dest, 0.995)
         queue_wait = (rho_dest * delta) / max(1e-6, 2.0 * (1.0 - rho_dest))
         latency = hops * delta + min(queue_wait, delta * 50.0)
-        
+
+        # FCT contribution from bulk-circuit wait (Opera NSDI'20 §4.1).
+        # The paper's M/D/1 model operates on the rotor-cycle timescale T_cycle
+        # (not delta), because a bulk flow waits for its NEXT direct-circuit
+        # slot which arrives once per T_cycle/u per destination.  Below the
+        # ceiling the wait is O(T_cycle/2); above the ceiling it diverges as
+        # rho_dest -> 1 — exactly the M/D/1 blow-up described in §4.1.
+        # We cap at rho_dest = 0.995 (already clamped above) to keep the
+        # finite numerical value near 100 * T_cycle, which is enough to show
+        # clear divergence in log-scale FCT plots without NaNs.
+        fct_wait = (rho_dest * t_cycle) / max(1e-6, 2.0 * (1.0 - rho_dest))
+
     elif architecture_type == "sirius":
         # Sirius Static Model (Section 2.3)
         # Direct (1-hop): η efficiency
@@ -754,7 +782,7 @@ def _apply_architecture_model(rate: float, hops: int,
         bw_tax = 1.0 - (1.0 / max(1, hops))
         latency = hops
     
-    return effective_rate, bw_tax, latency
+    return effective_rate, bw_tax, latency, fct_wait
 
 
 def _get_all_pairs_dist(adj_list: List[List[int]], num_nodes: int) -> np.ndarray:
