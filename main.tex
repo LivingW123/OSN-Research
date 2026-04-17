@@ -397,7 +397,6 @@
         \label{fig:shale_wf_3panel}
     \end{figure}
 
-    \subsubsection{VLB Waterfilling Analysis}
     \subsubsection{VLB Parameter Sensitivity}
     We extended the simulation to sweep the VLB spraying parameter $h$ from 1 to 12. The results are summarized in Figure \ref{fig:shale_h_range}.
 
@@ -438,14 +437,7 @@
         \label{tab:shale_efficiency}
     \end{table}
 
-    \paragraph{VLB Saturation Finding}
-    Combining equations (5) and (6): since $L(h) = h+1$ and $\tau(h) = \gamma \cdot L(h) + \beta_0$, the latency--throughput tradeoff is fully determined by $h$:
-    \begin{equation}
-        \tau(h) = \gamma(h+1) + \beta_0 = 1.2(h+1) + 2.5, \qquad \mathcal{T}(h) = \frac{1}{u_{\text{eff}}} \leq \frac{1}{h+1}
-    \end{equation}
-    Eliminating $h$: higher throughput demand (lower $h$) yields lower latency, but the bandwidth tax $\mathcal{B}_{tax} = 1 - 1/(2h)$ constrains the useful fraction. At $h=2$ (standard VLB), $\tau = 6.1$ cycles and $\mathcal{T} \leq 0.33$; at $h=1$ (direct), $\tau = 4.9$ cycles and $\mathcal{T} \leq 0.50$.
-
-    \subsubsection{VLB Waterfilling Analysis}
+    \subsubsection{VLB Waterfilling: $h=1$ vs $h=4$}
     To analyze the impact of VLB routing on capacity, we compare direct low-latency paths ($h=1$) against sprayed high-throughput paths ($h=4$) using the waterfilling algorithm.
 
     \begin{figure}[H]
@@ -1200,11 +1192,7 @@
     \subsection{Numerical Skew: Zipf Exponent Selection}
     \label{sec:skew_justification}
 
-    The skewed traffic model (\S1.1) uses a Zipf distribution with exponent $\gamma$ over randomized per-source destination ranks.  The choice of $\gamma$ determines the \emph{skew ratio} --- the ratio of maximum to minimum demand per source --- which directly controls how much the traffic departs from uniform:
-
-    \begin{equation}
-        \text{Skew Ratio} = \frac{D_{\max}}{D_{\min}} = \frac{1/(1^\gamma + 1)}{1/((N{-}1)^\gamma + 1)} = \frac{(N{-}1)^\gamma + 1}{2}
-    \end{equation}
+    The skewed traffic model (\S1.1) uses a Zipf distribution with exponent $\gamma$ over randomized per-source destination ranks, producing the skew ratio $((N{-}1)^\gamma + 1)/2$ (derived in \S1.1).  Table~\ref{tab:skew_values} shows how $\gamma$ controls the departure from uniform.
 
     \begin{table}[H]
         \centering
@@ -1230,8 +1218,6 @@
         \item \textbf{Discriminative power.}  At $\gamma = 1.0$ (classical Zipf), the $4.5\times$ skew ratio is too mild to differentiate architectures: all four score similarly because the demand is nearly uniform.  At $\gamma = 3.0$, the $256\times$ ratio effectively reduces to a many-to-one pattern (the top destination dominates), collapsing to the Shale-adversarial funnel (\S\ref{sec:adv_shale}).  $\gamma = 2.0$ sits in the discriminative sweet spot where each architecture's structural advantage or weakness manifests clearly without degenerating to a trivial edge case.
         \item \textbf{Entropy-based separation.}  The normalized entropy $H(\gamma)/H(0)$ at $\gamma = 2.0$ is $0.91/2.08 \approx 0.44$, meaning the demand distribution retains $44\%$ of the randomness of uniform traffic.  This ensures that the skew is strong enough to stress locality-dependent architectures (Shale's Hamming graph, GA-Robust's evolved topology) while still providing enough diversity to exercise multi-path routing mechanisms in all architectures.
     \end{enumerate}
-
-    The per-source rank permutation (implemented in \texttt{generate\_skewed\_traffic()}) ensures that each random seed produces a \emph{different spatial pattern} while preserving the same marginal Zipf distribution, addressing the limitation that a fixed index-distance formula always places the same pair of nodes in the same locality class.
 
     \section{Hardware-Equalized Comparison}
     \label{sec:hw_comparison}
@@ -1289,8 +1275,8 @@
         \label{fig:hw_eq_wf}
     \end{figure}
 
-    \subsection{Equalized Load Sweeps and Quantitative Analysis}
-    Figures~\ref{fig:hw_eq_uniform}--\ref{fig:hw_eq_hotspot} compare paper-hardware and equalized-hardware load sweeps for Uniform, Skewed, and Hotspot traffic.  Extracting the exact throughput, FCT, and latency at representative load factors reveals that \textbf{Opera is the only architecture with a significant sensitivity to hardware equalization}, while Sirius and Shale show only small, proportional changes.
+    \subsection{Equalized Load Sweeps}
+    Figures~\ref{fig:hw_eq_uniform}--\ref{fig:hw_eq_hotspot} compare Opera, Shale, and Sirius under the common $\delta/T = 2.61\%$ across Uniform, Skewed, and Hotspot traffic.  With hardware differences removed, the remaining performance gaps are purely from routing strategy and topology structure.
 
     \begin{table}[H]
         \centering
@@ -1318,57 +1304,43 @@
         \label{tab:hw_eq_deltas}
     \end{table}
 
-    Three distinct regimes emerge from Table~\ref{tab:hw_eq_deltas}:
-
-    \paragraph{Opera: large latency sensitivity ($-35\%$).}
-    Opera's latency model is $\tau = \ell \cdot \delta + \text{queue\_wait}$~\cite{opera}, where $\delta$ appears \emph{directly} as a multiplicative factor.  Reducing $\delta/T$ from $0.0400$ to $0.0261$ maps to $\delta \to \delta \times 0.653$, which propagates almost linearly into the latency formula: $\Delta\bar{\tau} \approx -34.7\%$ across all three traffic patterns.  This is a pure hardware coupling --- no other architecture's latency formula contains $\delta$ as a leading term.
-
-    Additionally, under Hotspot traffic at $L = 0.5$, Opera's throughput jumps $+12.1\%$ and FCT drops $-10.8\%$.  The mechanism: equalization raises the bulk-circuit capacity ceiling from $\alpha(1 - 0.0400) = 0.8832$ to $\alpha(1 - 0.0261) = 0.8960$~\cite{opera}, extending Opera's linear operating range by $\approx 1.4$ percentage points of load.  At $L = 0.5$ under Hotspot, the aggregate $\rho$ already exceeds the paper ceiling; the raised equalized ceiling absorbs the overflow, reducing expander tax and queue divergence.  Under Uniform and Skewed traffic, $L = 0.5$ stays below both ceilings, so only the small $+1.3\%$ $\eta$-proportional gain appears.
-
-    \paragraph{Sirius: negligible sensitivity ($\pm 1.3\%$).}
-    Sirius's capacity model is $r_{\text{eff}} = \eta \cdot r / \mathcal{H}(\ell)$~\cite{sirius}, where the hardware parameter enters only through $\eta = 1 - \delta/T$.  Changing $\eta$ from $0.9616$ to $0.9739$ is a $+1.28\%$ multiplicative shift that propagates uniformly to throughput, FCT, and latency.  Critically, the $\mathcal{H}(\ell)$ hop denominator and the $\exp(-10(\rho - 0.85))$ congestion penalty --- which cause Sirius's catastrophic collapse under Hotspot (FCT $\to 10^{11}$) --- are entirely independent of $\delta/T$.  Hardware equalization does not rescue Sirius from its routing-level VLB weakness.
-
-    \paragraph{Shale: small additive degradation ($-2.6\%$).}
-    Shale's paper $\delta/T = 0$; equalization \emph{adds} $2.61\%$ overhead it did not previously have, reducing throughput by exactly that fraction ($\eta_{\text{eq}} = 0.974$) and increasing FCT and latency proportionally ($+2.7\%$).  The VLB spray mechanism and $u_{\max}$-driven congestion model~\cite{shale} are completely unaffected by $\delta/T$, so the change is purely a constant scaling factor applied uniformly across all traffic patterns and load factors.
-
-    \paragraph{Implications.}
-    The asymmetry is striking: Opera is $\mathbf{27\times}$ \textbf{more sensitive} to hardware equalization than Sirius or Shale in terms of latency ($35\%$ vs $1.3\%$), because it is the only architecture whose latency formula contains $\delta$ as a direct multiplicative term.  This means:
+    \paragraph{Key insight.}
+    Opera is the most hardware-sensitive ($-35\%$ latency under equalization) because $\delta$ enters its latency formula directly; Sirius and Shale change by $< 3\%$.  But the dominant performance gaps are routing-structural:
     \begin{itemize}
-        \item Opera would benefit disproportionately from faster rotor switches (or longer cycles that amortize the same $\delta$).  A $2\times$ improvement in rotor reconfiguration speed would reduce Opera's latency by ${\sim}50\%$ while barely affecting Sirius or Shale.
-        \item Sirius and Shale require \emph{routing-level} changes (reducing VLB hops, reducing spray depth $h$) to achieve comparable latency improvements.  Hardware speed alone cannot overcome the $50\%$ bandwidth tax (Sirius) or $1 - 1/(2h)$ spray tax (Shale).
-        \item Under Hotspot traffic, no amount of hardware improvement rescues Sirius from congestion collapse ($\rho^* = 0.85$) or Shale from many-to-one convergence ($u_{\max} \to N{-}1$).  These are structural routing failures, not hardware limitations.
+        \item Sirius's VLB queue divergence ($\rho^* = 0.85$) is independent of $\delta/T$ --- it persists at the same critical load regardless of hardware speed.
+        \item Shale's spray convergence ($u_{\max} \to N{-}1$ under hotspot) is topology-structural and unaffected by timeslot duration.
+        \item Opera's bulk-schedule saturation ($\rho^* \approx 0.88$) improves slightly with faster hardware (raised ceiling) but the M/D/1 divergence mechanism remains.
     \end{itemize}
+    Hardware equalization reveals that the three architectures' weaknesses are \emph{routing failures}, not hardware limitations.
 
     \begin{figure}[H]
         \centering
         \includegraphics[width=\textwidth]{images/hw_eq_load_sweep_uniform.png}
-        \caption{Uniform traffic: paper hardware (left) vs equalized (right).  Throughput rankings are preserved.  The only visible change is Opera's FCT at high load ($L > 0.85$): the raised bulk ceiling delays the onset of M/D/1 queue divergence.  Sirius and Shale curves are indistinguishable between panels at this scale.}
+        \caption{Uniform traffic under normalized hardware ($\delta/T = 2.61\%$).  Opera and Sirius track closely in throughput until Sirius collapses at $L > 0.7$ (VLB queue divergence); Shale trails at ${\sim}0.32$ due to its multi-hop spray tax.  FCT diverges at high load: Sirius first (VLB), then Shale (spray convergence), Opera last.}
         \label{fig:hw_eq_uniform}
     \end{figure}
 
     \begin{figure}[H]
         \centering
         \includegraphics[width=\textwidth]{images/hw_eq_load_sweep_skewed.png}
-        \caption{Skewed traffic: paper vs equalized.  All three architectures show flat throughput curves across the load range because the waterfilling model allocates power to the highest-demand channels first.  Shale benefits from skewed demand regardless of hardware (Hamming locality~\cite{shale}).  The $\pm 1$--$3\%$ changes from equalization are invisible at this scale.}
+        \caption{Skewed traffic under normalized hardware.  Rankings are preserved from uniform: Sirius and Opera lead in throughput, Shale trails.  The skewed demand does not significantly alter the routing-level hierarchy when hardware is equalized.}
         \label{fig:hw_eq_skewed}
     \end{figure}
 
     \begin{figure}[H]
         \centering
         \includegraphics[width=\textwidth]{images/hw_eq_load_sweep_hotspot.png}
-        \caption{Hotspot traffic: the critical stress test.  Under equalized hardware, Sirius still collapses catastrophically (FCT $\to 10^{11}$ at $L > 0.5$) and Shale still degrades (spray convergence on the hot node).  Opera is the only architecture with a visible change: throughput at $L = 0.3$--$0.5$ rises $+12\%$ and FCT drops $-11\%$ due to the higher bulk ceiling.  Hardware equalization does not rescue any architecture from its routing-level weakness~\cite{opera,sirius,shale}.}
+        \caption{Hotspot traffic under normalized hardware.  Sirius collapses catastrophically (VLB queue divergence at $\rho > 0.85$), Shale degrades from spray convergence on the hot node, and Opera's throughput drops under concentrated demand but degrades most gracefully of the three.  Hardware equalization does not rescue any architecture from its routing-level weakness.}
         \label{fig:hw_eq_hotspot}
     \end{figure}
 
     \subsection{Equalized Composite Scores}
-    Figure~\ref{fig:hw_eq_scores} presents the composite benchmark scores $S_{\text{bench}}$ under paper and equalized hardware side by side.  Because $S_{\text{bench}}$ is multiplicative (\S1.2.6), Opera's $35\%$ latency improvement compounds through the $1/(1 + \bar{\tau})$ factor: reducing $\bar{\tau}$ from ${\sim}3.1$ to ${\sim}2.0$ raises this factor from $0.24$ to $0.33$, a $+37\%$ boost that alone drives Opera's composite score up by ${\sim}40$--$50\%$.  By contrast, Sirius's $+1.3\%$ and Shale's $-2.6\%$ changes are barely visible in the grouped bar chart.
-
-    The relative ranking, however, is \textbf{preserved across all traffic scenarios}: Sirius leads under Uniform and Skewed, Opera leads under Hotspot, and Shale trails in all cases.  This confirms that the cross-architecture performance hierarchy reported throughout this paper is fundamentally architectural --- determined by routing strategy and topology structure --- not an artifact of hardware-level advantages.
+    Figure~\ref{fig:hw_eq_scores} presents the composite benchmark scores $S_{\text{bench}}$ with all three architectures at the common $\delta/T = 2.61\%$.  With hardware leveled, Sirius leads under Uniform and Skewed traffic (its VLB operates below the $\rho^* = 0.85$ threshold at moderate load), while all three collapse under Hotspot --- confirming that hotspot vulnerability is a routing-structural property shared by all three fixed architectures, not a hardware artifact.
 
     \begin{figure}[H]
         \centering
         \includegraphics[width=\textwidth]{images/hw_eq_scenario_comparison.png}
-        \caption{Composite $S_{\text{bench}}$ scores: solid bars = paper hardware, hatched bars = equalized ($\delta/T = 2.61\%$).  Opera's score rises ${\sim}50\%$ under equalization (driven by $35\%$ latency reduction), while Sirius ($+1.3\%$) and Shale ($-2.6\%$) are nearly unchanged.  Rankings are preserved: Sirius leads Uniform/Skewed; Opera leads Hotspot.}
+        \caption{Composite $S_{\text{bench}}$ under normalized hardware ($\delta/T = 2.61\%$ for all).  Sirius leads Uniform/Skewed; all three score near zero under Hotspot.  The remaining performance differences are purely routing-structural.}
         \label{fig:hw_eq_scores}
     \end{figure}
 

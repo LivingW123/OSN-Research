@@ -39,7 +39,7 @@ import matplotlib.pyplot as plt
 _real = sys.stdout
 sys.stdout = io.StringIO()
 
-from shale_alg import RR2
+from Shale_Alg import RR2
 from Waterfilling_Alg import waterfilling
 from Common_Alg import generate_random_latin_square
 from AI_Topology import generate_random_topology, calculate_aspl
@@ -68,6 +68,7 @@ random.seed(42)
 C_OPERA   = '#2196F3'
 C_SHALE   = '#4CAF50'
 C_SIRIUS  = '#FF9800'
+C_GENETIC = '#9C27B0'
 
 
 # ====================================================================
@@ -171,16 +172,24 @@ sirius_src = SiriusGen(N)
 sys.stdout = _s
 sirius_adj = [sirius_src[i] for i in range(N)]
 
+_s = sys.stdout; sys.stdout = io.StringIO()
+genetic_adj_raw = generate_random_topology(N, degree=4)
+sys.stdout = _s
+genetic_adj = [list(genetic_adj_raw[i]) for i in range(N)]
+
 TOPOS = {
     'Opera':  opera_adj,
     'Shale':  shale_adj,
     'Sirius': sirius_adj,
+    'GA-Robust': genetic_adj,
 }
-ARCH_TYPES = {'Opera': 'opera', 'Shale': 'shale', 'Sirius': 'sirius'}
-ARCH_COLORS = {'Opera': C_OPERA, 'Shale': C_SHALE, 'Sirius': C_SIRIUS}
+ARCH_TYPES = {'Opera': 'opera', 'Shale': 'shale', 'Sirius': 'sirius',
+              'GA-Robust': None}
+ARCH_COLORS = {'Opera': C_OPERA, 'Shale': C_SHALE, 'Sirius': C_SIRIUS,
+               'GA-Robust': C_GENETIC}
 
 for name, adj in TOPOS.items():
-    print(f"  {name:8s}: N={len(adj)}")
+    print(f"  {name:10s}: N={len(adj)}")
 
 
 # ====================================================================
@@ -314,10 +323,12 @@ def _build_wf_data(adj_list, traffic, total_power=POWER):
     return noise, alloc, wl
 
 
-# 3-row × 3-col grid: rows = architectures, cols = traffic patterns
-fig, axes = plt.subplots(3, 3, figsize=(18, 14))
+# 3-row × 3-col grid: rows = equalized architectures, cols = traffic patterns
+# (GA-Robust excluded — it has δ/T=0 natively, no equalization needed)
+eq_archs = {k: v for k, v in TOPOS.items() if k != 'GA-Robust'}
+fig, axes = plt.subplots(len(eq_archs), 3, figsize=(18, 14))
 
-for row, (arch_name, adj) in enumerate(TOPOS.items()):
+for row, (arch_name, adj) in enumerate(eq_archs.items()):
     color = ARCH_COLORS[arch_name]
     for col, (plabel, ptm) in enumerate(_traffic_panels):
         ax = axes[row][col]
@@ -344,7 +355,7 @@ for row, (arch_name, adj) in enumerate(TOPOS.items()):
                      fontsize=9)
         if col == 0:
             ax.set_ylabel('Power / Noise')
-        if row == 2:
+        if row == len(eq_archs) - 1:
             ax.set_xlabel('Channel Index')
         ax.grid(axis='y', alpha=0.3)
 
@@ -377,63 +388,42 @@ traffic_generators = {
 for tkey, (tlabel, ttype, tgen) in traffic_generators.items():
     base_traffic = tgen()
 
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
+    # Compare Opera/Shale/Sirius all at the same δ/T (normalized)
     for arch_name in arch_list:
         adj = TOPOS[arch_name]
         atype = ARCH_TYPES[arch_name]
         color = ARCH_COLORS[arch_name]
 
-        tp_paper, tp_eq = [], []
-        fct_paper, fct_eq = [], []
+        tp_vals, fct_vals = [], []
 
         for L in loads:
             tm = base_traffic * L
+            fct_v, prim_v, _ = run_capacity(adj, tm, atype,
+                                             PARAMS_EQ, equalized=True)
+            tp_vals.append(prim_v.throughput)
+            fct_vals.append(fct_v)
 
-            # Paper parameters
-            fct_p, prim_p, _ = run_capacity(adj, tm, atype, PARAMS_PAPER,
-                                             equalized=False)
-            tp_paper.append(prim_p.throughput)
-            fct_paper.append(fct_p)
+        axes[0].plot(loads, tp_vals, marker='o', ls='-', color=color,
+                     label=arch_name, markersize=3, lw=1.5)
+        axes[1].plot(loads, fct_vals, marker='o', ls='-', color=color,
+                     label=arch_name, markersize=3, lw=1.5)
 
-            # Equalized parameters
-            fct_e, prim_e, _ = run_capacity(adj, tm, atype, PARAMS_EQ,
-                                             equalized=True)
-            tp_eq.append(prim_e.throughput)
-            fct_eq.append(fct_e)
+    axes[0].set_xlabel('Load Factor $L$')
+    axes[0].set_ylabel('Normalized Throughput')
+    axes[0].set_title(f'Throughput — Normalized $\\delta/T$={TARGET_RATIO*100:.2f}% ({tlabel})',
+                      fontsize=10)
+    axes[0].legend(fontsize=8)
+    axes[0].grid(alpha=0.3)
 
-        # Top-left: Paper throughput
-        axes[0, 0].plot(loads, tp_paper, 'o-', color=color,
-                        label=arch_name, markersize=3, lw=1.5)
-        # Top-right: Equalized throughput
-        axes[0, 1].plot(loads, tp_eq, 'o-', color=color,
-                        label=arch_name, markersize=3, lw=1.5)
-        # Bottom-left: Paper FCT
-        axes[1, 0].plot(loads, fct_paper, 'o-', color=color,
-                        label=arch_name, markersize=3, lw=1.5)
-        # Bottom-right: Equalized FCT
-        axes[1, 1].plot(loads, fct_eq, 'o-', color=color,
-                        label=arch_name, markersize=3, lw=1.5)
-
-    titles = [
-        f'Throughput — Paper Hardware ({tlabel})',
-        f'Throughput — Equalized δ/T={TARGET_RATIO*100:.2f}% ({tlabel})',
-        f'FCT — Paper Hardware ({tlabel})',
-        f'FCT — Equalized δ/T={TARGET_RATIO*100:.2f}% ({tlabel})',
-    ]
-    ylabels = [
-        'Normalized Throughput', 'Normalized Throughput',
-        'Flow Completion Time', 'Flow Completion Time',
-    ]
-
-    for idx, ax in enumerate(axes.flat):
-        ax.set_xlabel('Load Factor $L$')
-        ax.set_ylabel(ylabels[idx])
-        ax.set_title(titles[idx], fontsize=10)
-        ax.legend(fontsize=8)
-        ax.grid(alpha=0.3)
-        if idx >= 2:
-            ax.set_yscale('log')
+    axes[1].set_xlabel('Load Factor $L$')
+    axes[1].set_ylabel('Flow Completion Time')
+    axes[1].set_title(f'FCT — Normalized $\\delta/T$={TARGET_RATIO*100:.2f}% ({tlabel})',
+                      fontsize=10)
+    axes[1].set_yscale('log')
+    axes[1].legend(fontsize=8)
+    axes[1].grid(alpha=0.3)
 
     plt.tight_layout()
     fname = f'hw_eq_load_sweep_{tkey}.png'
@@ -447,8 +437,7 @@ for tkey, (tlabel, ttype, tgen) in traffic_generators.items():
 # ====================================================================
 print("\nComposite score comparison ...")
 
-score_data = {cond: {a: [] for a in arch_list}
-              for cond in ['Paper', 'Equalized']}
+score_data = {a: [] for a in arch_list}
 
 for tkey, (tlabel, ttype, tgen) in traffic_generators.items():
     tm = tgen() * LOAD
@@ -457,52 +446,31 @@ for tkey, (tlabel, ttype, tgen) in traffic_generators.items():
         adj = TOPOS[arch_name]
         atype = ARCH_TYPES[arch_name]
 
-        # Paper
-        fct_p, prim_p, sec_p = run_capacity(adj, tm, atype, PARAMS_PAPER,
-                                             equalized=False)
-        sc_p = compute_benchmark_score(atype, prim_p, sec_p, PARAMS_PAPER)
-        score_data['Paper'][arch_name].append(sc_p.composite())
-
-        # Equalized
-        fct_e, prim_e, sec_e = run_capacity(adj, tm, atype, PARAMS_EQ,
-                                             equalized=True)
-        sc_e = compute_benchmark_score(atype, prim_e, sec_e, PARAMS_EQ)
-        score_data['Equalized'][arch_name].append(sc_e.composite())
+        fct_v, prim_v, sec_v = run_capacity(adj, tm, atype,
+                                             PARAMS_EQ, equalized=True)
+        sc = compute_benchmark_score(atype, prim_v, sec_v, PARAMS_EQ)
+        score_data[arch_name].append(sc.composite())
 
 scen_labels = [v[0] for v in traffic_generators.values()]
 x = np.arange(len(scen_labels))
-width = 0.13
-n_bars = len(arch_list) * 2  # paper + equalized per arch
+width = 0.25
+n_bars = len(arch_list)
 
 fig, ax = plt.subplots(figsize=(12, 6))
 
-bar_idx = 0
-for arch_name in arch_list:
+for bar_idx, arch_name in enumerate(arch_list):
     color = ARCH_COLORS[arch_name]
-
-    # Paper (solid)
-    vals_p = score_data['Paper'][arch_name]
-    ax.bar(x + bar_idx * width, vals_p, width,
-           label=f'{arch_name} (paper)', color=color,
-           edgecolor='black', linewidth=0.4, alpha=0.9)
-    bar_idx += 1
-
-    # Equalized (hatched)
-    vals_e = score_data['Equalized'][arch_name]
-    ax.bar(x + bar_idx * width, vals_e, width,
-           label=f'{arch_name} (equalized)', color=color,
-           edgecolor='black', linewidth=0.4, alpha=0.5, hatch='//')
-    bar_idx += 1
+    vals = score_data[arch_name]
+    ax.bar(x + bar_idx * width, vals, width,
+           label=arch_name, color=color,
+           edgecolor='black', linewidth=0.4)
 
 ax.set_xlabel('Traffic Scenario')
 ax.set_ylabel('Composite Score $S_{bench}$')
-ax.set_title(f'Paper Hardware vs Equalized ($\\delta/T$ = {TARGET_RATIO*100:.2f}%)\n'
-             f'Opera ×{MULTIPLIERS["Opera"]:.3f}, '
-             f'Sirius ×{MULTIPLIERS["Sirius"]:.3f}, '
-             f'Shale +{TARGET_RATIO:.4f}')
+ax.set_title(f'Normalized Comparison ($\\delta/T$={TARGET_RATIO*100:.2f}% for all)')
 ax.set_xticks(x + (n_bars - 1) * width / 2)
 ax.set_xticklabels(scen_labels)
-ax.legend(fontsize=7, ncol=3)
+ax.legend(fontsize=8)
 ax.grid(axis='y', alpha=0.3)
 
 plt.tight_layout()

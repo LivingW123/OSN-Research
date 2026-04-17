@@ -461,11 +461,25 @@ def calculate_topology_capacity(adj_list: List[List[int]],
     # 2b. Pre-compute architecture-level quantities used inside the per-flow loop.
 
     # Opera: normalised offered load ρ (used for load-dependent α_eff / queuing)
+    # NOT clipped to 1.0 — high-demand patterns (hotspot, adversarial) produce
+    # ρ > 1, which is essential for M/D/1 queue divergence and traffic-dependent
+    # FCT.  Opera NSDI'20 §4.1: "bulk flows wait for a direct circuit" — when
+    # ρ ≫ 1 the wait grows without bound (queue divergence).
     opera_rho: float = 0.0
+    opera_col_loads: np.ndarray = None  # per-destination offered load
     if architecture_type == "opera":
         total_demand = float(np.sum(traffic_matrix))
         opera_rho = total_demand / (num_nodes * (num_nodes - 1)) if num_nodes > 1 else 0.0
-        opera_rho = float(np.clip(opera_rho, 0.0, 1.0))
+        opera_rho = float(max(opera_rho, 0.0))
+        # Per-destination column load: each destination j receives Σ_i D[i,j].
+        # Under Opera's round-robin rotor schedule each destination gets 1/N
+        # of the total circuit time per epoch.  Destinations with above-average
+        # ingress demand see proportionally higher bulk-queue occupancy.
+        # Opera NSDI'20 §5.1 / Fig. 7: FCT depends on workload mix because
+        # heavy destinations saturate their bulk circuits earlier.
+        col_sums = np.sum(traffic_matrix, axis=0)  # per-destination ingress
+        mean_col = float(np.mean(col_sums[col_sums > 0])) if np.any(col_sums > 0) else 1.0
+        opera_col_loads = col_sums / (mean_col + 1e-9)  # ratio vs mean
 
     # Shale congestion pre-computation (Option C)
     #     Compute u_max and per-flow spray info BEFORE waterfilling
@@ -517,11 +531,19 @@ def calculate_topology_capacity(adj_list: List[List[int]],
                     spray_hops = fi['avg_hops']
 
             # Apply architecture-specific capacity model
+            # For Opera: pass per-destination load ratio so that flows to
+            # heavily-loaded destinations see proportionally higher M/D/1
+            # queuing (Opera NSDI'20 §4.1 / Fig. 7).
+            dst_load_ratio = 1.0
+            if opera_col_loads is not None and dst < len(opera_col_loads):
+                dst_load_ratio = float(opera_col_loads[dst])
+
             effective_rate, bw_tax, latency = _apply_architecture_model(
                 rate, hops, architecture_type, params,
                 congestion_factor=cong_factor,
                 spray_avg_hops=spray_hops,
-                load_rho=opera_rho if architecture_type == "opera" else None
+                load_rho=opera_rho if architecture_type == "opera" else None,
+                dest_load_ratio=dst_load_ratio,
             )
             
             total_capacity += effective_rate
@@ -558,19 +580,23 @@ def calculate_topology_capacity(adj_list: List[List[int]],
             total_capacity *= penalty
             total_completion_time /= penalty
 
-    # Opera bulk-ceiling saturation penalty.
+    # Opera bulk-ceiling saturation: throughput plateaus above the ceiling.
     # The bulk_ceil = α·(1−δ/T_cycle) ≈ 0.8832 is the maximum load the bulk
-    # circuits can sustain.  Above this point the M/D/1 queue for bulk slots
-    # grows super-linearly, causing increasing circuit misses.  We model the
-    # resulting throughput loss with an exponential decay that mirrors the
-    # queue blow-up: penalty = exp(−8·(ρ − bulk_ceil)).
-    #   ρ = bulk_ceil      → penalty = 1.00  (no loss)
-    #   ρ = 0.90           → penalty ≈ 0.88  (−12 %)
-    #   ρ = 0.95           → penalty ≈ 0.59  (−41 %)
+    # circuits can sustain.  Above this point, excess traffic overflows to the
+    # expander.  On a fully-connected topology (hops=1 for all pairs) the
+    # expander has no hop penalty, so throughput *plateaus* rather than
+    # collapsing.  Per-destination M/D/1 queue divergence is now handled by
+    # dest_load_ratio in _apply_architecture_model, providing traffic-dependent
+    # FCT growth (Opera NSDI'20 §4.1 / Fig. 7).
+    #
+    # Model: penalty = min(1, ceil/ρ) — throughput cannot exceed ceiling × rate.
+    #   ρ = 0.90 → penalty = 0.883/0.90 = 0.98
+    #   ρ = 1.50 → penalty = 0.883/1.50 = 0.59  (hotspot plateau)
+    #   ρ = 3.00 → penalty = 0.883/3.00 = 0.29
     if architecture_type == "opera" and opera_rho > 0:
         bulk_ceil_op = params.opera_alpha * (1.0 - params.opera_delta / params.opera_t_cycle)
         if opera_rho > bulk_ceil_op:
-            penalty = np.exp(-8.0 * (opera_rho - bulk_ceil_op))
+            penalty = bulk_ceil_op / opera_rho
             total_capacity *= penalty
             total_completion_time /= penalty
     
@@ -604,7 +630,8 @@ def _apply_architecture_model(rate: float, hops: int,
                               params: ArchitectureParams,
                               congestion_factor: float = None,
                               spray_avg_hops: float = None,
-                              load_rho: float = None) -> Tuple[float, float, float]:
+                              load_rho: float = None,
+                              dest_load_ratio: float = 1.0) -> Tuple[float, float, float]:
     """
     Apply architecture-specific capacity model.
 
@@ -614,7 +641,10 @@ def _apply_architecture_model(rate: float, hops: int,
 
     For Opera, load_rho enables load-dependent queuing latency and the
     effective bulk-fraction alpha_eff, which decreases above the bulk-circuit
-    capacity ceiling (alpha * (1 - delta/T_cycle)).
+    capacity ceiling (alpha * (1 - delta/T_cycle)).  dest_load_ratio scales
+    the per-flow queuing by the destination's relative ingress load so that
+    flows to hotspot destinations see proportionally higher M/D/1 wait times
+    (Opera NSDI'20 §4.1 / Fig. 7).
 
     Returns: (effective_rate, bandwidth_tax, latency)
     """
@@ -676,15 +706,26 @@ def _apply_architecture_model(rate: float, hops: int,
         bw_tax = (1.0 - alpha_eff) * (hops - 1) / max(1, hops)
 
         # Queuing latency: M/D/1 approximation for bulk circuit wait time.
-        # Service time is expressed in the same normalised units as delta (not
-        # T_cycle), so that latency remains comparable across architectures.
-        # At rho_bulk → 1, queue_wait → 5*delta (capped) to avoid divergence.
-        #   rho_bulk=0.0: queue_wait≈0,     latency ≈ hops*delta (base)
-        #   rho_bulk=0.5: queue_wait≈delta, latency grows moderately
-        #   rho_bulk=0.9: queue_wait≈9*delta→capped at 5*delta
-        rho_bulk = min(alpha_split * rho / max(bulk_ceil, 1e-9), 0.98)
-        queue_wait = (rho_bulk * delta) / max(1e-6, 2.0 * (1.0 - rho_bulk))
-        latency = hops * delta + min(queue_wait, delta * 5.0)
+        # Opera NSDI'20 §4.1: bulk flows wait for a direct circuit on the
+        # round-robin rotor schedule.  Wait time is proportional to the
+        # offered load on the *destination's* bulk circuits, not just the
+        # global ρ.  dest_load_ratio (column-sum / mean-column-sum) scales
+        # the per-destination offered load so that hotspot destinations
+        # see proportionally higher queue occupancy and thus higher FCT.
+        #
+        # rho_dest: effective offered load for THIS destination's circuits.
+        #   Under uniform traffic dest_load_ratio ≈ 1 → rho_dest ≈ rho_bulk.
+        #   Under hotspot with intensity 10: hot dest ratio ≈ 4.5 → rho_dest
+        #   diverges at much lower L, causing early FCT growth.
+        #
+        # The cap at 0.995 (not 0.98) allows queue_wait to reach ~100*delta
+        # before clamping, making M/D/1 divergence visible in the FCT curves
+        # while keeping numerical stability.
+        rho_bulk_global = alpha_split * rho / max(bulk_ceil, 1e-9)
+        rho_dest = rho_bulk_global * max(dest_load_ratio, 0.1)
+        rho_dest = min(rho_dest, 0.995)
+        queue_wait = (rho_dest * delta) / max(1e-6, 2.0 * (1.0 - rho_dest))
+        latency = hops * delta + min(queue_wait, delta * 50.0)
         
     elif architecture_type == "sirius":
         # Sirius Static Model (Section 2.3)
