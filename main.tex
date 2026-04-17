@@ -1201,23 +1201,23 @@
 
     \begin{table}[H]
         \centering
-        \caption{Analytical vs.\ experimental adversarial critical load $\rho^*$ under Uniform, Skewed, and Adversarial traffic.  ``---'' means no sharp collapse was detected within $L \in [0.05, 0.97]$ (the architecture degrades gracefully).}
+        \caption{Analytical vs.\ experimental adversarial critical load $\rho^*$ under Uniform, Skewed, and Adversarial traffic (data from \texttt{find\_adversarial\_critical\_points()}).  ``---'' means no sharp collapse was detected within $L \in [0.05, 0.97]$ (the architecture degrades gracefully).}
         \begin{tabular}{|l|c|c|c|c|}
             \hline
             \textbf{Arch.} & \textbf{Analytical} $\rho^*$ & \textbf{Exp.\ Uniform} & \textbf{Exp.\ Skewed} & \textbf{Exp.\ Adversarial} \\
             \hline
-            Sirius     & 0.85  & 0.85 & 0.85 & 0.85 \\
-            Opera      & 0.883 & 0.89 & 0.89 & ---  \\
-            Shale RR2  & $1/(h{+}1) = 0.333$ & 0.33 & 0.33 & 0.33 \\
-            GA-Robust  & $\approx 1/\overline{d}$ & ---  & ---  & ---  \\
-            GA-FCT     & $\approx 1/\overline{d}$ & ---  & ---  & ---  \\
-            GA-Dynamic & $\approx 1/u_{\max}$ & ---  & ---  & ---  \\
+            Sirius     & 0.850 & 0.663 & 0.663 & 0.587 \\
+            Opera      & 0.883 & 0.702 & 0.702 & 0.625 \\
+            Shale RR2  & $1/(h{+}1) = 0.333$ & 0.395 & 0.318 & 0.203 \\
+            GA-Robust  & $\approx 1/\overline{d} = 0.600$ & --- & --- & 0.548 \\
+            GA-FCT     & $\approx 1/\overline{d} = 0.590$ & --- & --- & 0.587 \\
+            GA-Dynamic & $\approx 1/u_{\max} = 0.632$ & --- & --- & 0.548 \\
             \hline
         \end{tabular}
         \label{tab:critical_points}
     \end{table}
 
-    Sirius's collapse at $\rho^*=0.85$ is pattern-invariant (the VLB penalty depends only on global $\rho$, not on demand structure).  Opera saturates near its analytical bulk ceiling ($\rho^*\approx 0.88$) under Uniform and Skewed but degrades gracefully under the Adversarial matrix because the aggregate offered load is already so high that the detection threshold ($\Delta > 0.03$) is never crossed in a single step.  Shale trips its $1/(h{+}1)$ ceiling identically in all three patterns.  All three GA variants pass the experimental detector without a sharp collapse --- a direct consequence of their multi-objective fitness avoiding single-bottleneck failure modes.
+    Three qualitative patterns are visible.  (i)~Sirius and Opera experimentally collapse earlier ($0.66$, $0.70$ respectively under Uniform/Skewed) than their analytical $\rho^*$ would suggest, because the $\Delta>0.03$ detector fires as soon as the M/D/1 queue (Opera) or $C_{\text{load}}(\rho)$ penalty (Sirius) makes throughput non-monotone, which happens below the formal saturation ceiling.  (ii)~Shale trips its $1/(h{+}1)$ ceiling at the expected level under all three patterns; the variation ($0.40/0.32/0.20$) is Shale's $u_{\max}$ depending on demand structure (higher skew $\Rightarrow$ lower collapse load).  (iii)~All three GA variants pass the experimental detector \emph{without} any collapse under Uniform and Skewed, and only register a graceful experimental $\rho^*$ under the Adversarial matrix ($0.55$ for GA-Robust and GA-Dynamic, $0.59$ for GA-FCT) --- a direct consequence of multi-objective fitness avoiding single-bottleneck failure modes.
 
     \paragraph{Hardware-equalisation ground rules for the routing-level proofs.}
     Each subsection below additionally reports the critical load under the idealised equalisation $T_{\text{slot}} = T^* = 100\,\text{ns}$, $\delta = 0 \Rightarrow \eta = 1$.  Under this idealisation only the routing policy (Opera's $\alpha$-split, Sirius's 2-hop VLB spray, Shale's $h$-hop spray, GA's shortest-path) and the topology-induced hop structure remain, so any residual degradation is a pure \emph{routing} property.

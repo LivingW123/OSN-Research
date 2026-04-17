@@ -684,98 +684,27 @@ plt.close()
 print("  ✓ benchmark_scenario_comparison.png")
 
 
-# ── 8c.  traffic_benchmark_capacity  &  _completion_time (3-panel) ───
-power_range = np.linspace(20, 100, 8).tolist()
-panel_traffics = [
-    ('Uniform', generate_uniform_traffic(N) * 0.5),
-    ('Skewed',  generate_skewed_traffic(N, skew_factor=2.0, seed=42) * 0.5),
-    ('Hotspot', generate_hotspot_traffic(N) * 0.5),
-]
-
-fig_cap, axes_cap = plt.subplots(1, 3, figsize=(16, 5), sharey=True)
-fig_fct, axes_fct = plt.subplots(1, 3, figsize=(16, 5), sharey=True)
-
-for pi, (plabel, ptm) in enumerate(panel_traffics):
-    for alabel, atype, aname, acolor in zip(
-            arch_labels, arch_types, arch_names, arch_colors):
-        caps, fcts = [], []
-        for pwr in power_range:
-            fct, prim, _ = calculate_topology_capacity(
-                TOPOS[aname], ptm, total_power=pwr,
-                architecture_type=atype, return_metrics=True)
-            # Shannon capacity proxy: total effective rate
-            caps.append(prim.throughput)
-            fcts.append(fct)
-        axes_cap[pi].plot(power_range, caps, 'o-', color=acolor,
-                          label=alabel, markersize=4)
-        axes_fct[pi].plot(power_range, fcts, 'o-', color=acolor,
-                          label=alabel, markersize=4)
-
-    for ax_arr, ylabel in [(axes_cap, 'Throughput (fraction of line rate)'),
-                           (axes_fct, 'Total FCT (normalized ratio)')]:
-        ax_arr[pi].set_xlabel('Power Budget $P$ (unitless)')
-        ax_arr[pi].set_title(plabel)
-        ax_arr[pi].legend(fontsize=7)
-        ax_arr[pi].grid(alpha=.3)
-    axes_cap[0].set_ylabel('Throughput (fraction of line rate)')
-    axes_fct[0].set_ylabel('Total Flow Completion Time (normalized ratio)')
-
-for figobj, fname in [(fig_cap, 'traffic_benchmark_capacity.png'),
-                       (fig_fct, 'traffic_benchmark_completion_time.png')]:
-    figobj.tight_layout()
-    figobj.savefig(os.path.join(IMG_DIR, fname), dpi=DPI, bbox_inches='tight')
-    plt.close(figobj)
-    print(f"  ✓ {fname}")
+# ── 8c.  (removed) traffic_benchmark_capacity and traffic_benchmark_completion_time  ──
+# These 3-panel power-budget figures were cut — the information is already in
+# the four benchmark_load_sweep_{scenario}.png plots.
 
 
 # ====================================================================
-# 9.  ADVERSARIAL CRITICAL POINTS
+# 9.  ADVERSARIAL CRITICAL POINTS — data only; figure was cut in favour
+#     of Table~\ref{tab:critical_points} in main.tex because the 6-line
+#     overlay became unreadable after adding GA-FCT and GA-Dynamic.
 # ====================================================================
-print("\nAdversarial critical-points sweep …")
+print("\nAdversarial critical-points sweep (data printed, no figure) …")
 
 crit_load_range = np.linspace(0.05, 0.97, 25).tolist()
-fig_crit, axes_crit = plt.subplots(1, 3, figsize=(16, 5), sharey=False)
-titles_crit = ['Uniform', 'Skewed', 'Adversarial']
-
-hw_labels = {
-    'opera':   f"Opera  hw_ovhd={get_hw_reconfig_ratio('opera', ArchitectureParams()):.4f}",
-    'shale':   f"Shale  hw_ovhd={get_hw_reconfig_ratio('shale', ArchitectureParams()):.4f}",
-    'sirius':  f"Sirius hw_ovhd={get_hw_reconfig_ratio('sirius', ArchitectureParams()):.4f}",
-    'genetic': f"GA-Robust hw_ovhd={get_hw_reconfig_ratio(None, ArchitectureParams()):.4f}",
-}
-
-for i, (aname, atype, acolor, alabel) in enumerate(
-        zip(arch_names, arch_types, arch_colors, arch_labels)):
+for aname, atype, alabel in zip(arch_names, arch_types, arch_labels):
     crit = find_adversarial_critical_points(
         TOPOS[aname], atype,
         load_range=crit_load_range, total_power=POWER)
-
-    for pi, sweep_key in enumerate(['sweep_uniform', 'sweep_skewed', 'sweep_adversarial']):
-        sw = crit[sweep_key]
-        axes_crit[pi].plot(crit_load_range, sw['throughput'], 'o-',
-                           color=acolor, label=alabel, markersize=3)
-        # Mark experimental critical point with a vertical line
-        ec = crit[f'exp_critical_{["uniform","skewed","adversarial"][pi]}']
-        if ec is not None:
-            axes_crit[pi].axvline(ec, color=acolor, ls=':', lw=1.5, alpha=0.7)
-
-    # Annotate analytical critical point on the uniform panel
-    ac = crit['analytical_critical']
-    axes_crit[0].axvline(ac, color=acolor, ls='--', lw=1.0, alpha=0.5)
-
-for pi, title in enumerate(titles_crit):
-    axes_crit[pi].set_xlabel('Load Factor (ratio)')
-    axes_crit[pi].set_title(f'Throughput — {title}\n'
-                            f'(dashed = analytical ρ*, dotted = experimental ρ*)')
-    axes_crit[pi].legend(fontsize=6)
-    axes_crit[pi].grid(alpha=.3)
-axes_crit[0].set_ylabel('Normalized Throughput (fraction of line rate)')
-
-fig_crit.tight_layout()
-fig_crit.savefig(os.path.join(IMG_DIR, 'adversarial_critical_points.png'),
-                 dpi=DPI, bbox_inches='tight')
-plt.close(fig_crit)
-print("  ✓ adversarial_critical_points.png")
+    print(f"  {alabel:<11s}  analytical ρ*={crit['analytical_critical']:.3f}  "
+          f"exp(U/S/A)={crit['exp_critical_uniform']}, "
+          f"{crit['exp_critical_skewed']}, "
+          f"{crit['exp_critical_adversarial']}")
 
 
 # ====================================================================
@@ -901,7 +830,7 @@ for target_arch, base_tm, fig_title, fname, vline_label, vline_x in _adv_skews:
 
 
 # ====================================================================
-print(f"\nDone — {28} figures written to {IMG_DIR}/")
+print(f"\nDone — 25 figures written to {IMG_DIR}/  (3 cut: capacity/completion/critical_points)")
 # Figure inventory (28 total):
 #  1-5   shale WF + benchmarks
 #  6-10  opera WF + efficiency + throughput
