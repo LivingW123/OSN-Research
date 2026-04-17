@@ -175,6 +175,53 @@ def generate_adversarial_skew_shale(num_nodes: int,
     return traffic
 
 
+def generate_adversarial_skew_sirius(num_nodes: int,
+                                     num_burst: int = 5,
+                                     d_burst: float = 5.0,
+                                     d_background: float = 0.5) -> np.ndarray:
+    """
+    Sirius-adversarial 'synchronized demand surge' skew.
+
+    A majority of source nodes (the 'burst set' B, |B| = num_burst) transmit
+    heavy demand d_burst to ALL destinations simultaneously, while the
+    remaining sources carry only background demand d_background.
+
+    Under Sirius VLB, every flow is sprayed through a random intermediate
+    node.  When |B| burst sources each flood all N-1 destinations, every
+    intermediate node must simultaneously buffer and forward spray traffic
+    from |B| heavy sources — the aggregate load pushes the normalised
+    offered load ρ = Σ T / (N·(N-1)) well above the VLB queue-divergence
+    threshold ρ* = 0.85, triggering the exponential collapse
+    C_load(ρ) = exp(−10(ρ − 0.85)).
+
+    For N=9, |B|=5, d_burst=5.0, d_background=0.5:
+        Σ_T  = 5·8·5.0 + 4·8·0.5 = 200 + 16 = 216
+        ρ(L) = L · 216 / 72 = 3.0 L
+        L_crit^Sirius ≈ 0.85 / 3.0 ≈ 0.283
+
+    Opera saturates later (ρ* = 0.883 → L_crit ≈ 0.294) and decays more
+    gently (rate 8 vs 10).  Shale and GA-Robust are unaffected: demand is
+    spread across all destinations (no funnel), and the topology is fully
+    connected (no long-hop bias).
+
+    Parameters
+    ----------
+    num_nodes    : Number of network nodes N
+    num_burst    : Number of burst-source nodes |B| (nodes 0..num_burst-1)
+    d_burst      : Demand from each burst source to every destination
+    d_background : Demand from each non-burst source to every destination
+    """
+    traffic = np.zeros((num_nodes, num_nodes))
+    for i in range(num_nodes):
+        for j in range(num_nodes):
+            if i != j:
+                if i < num_burst:
+                    traffic[i, j] = d_burst
+                else:
+                    traffic[i, j] = d_background
+    return traffic
+
+
 def generate_adversarial_skew_ga(adj_list: List[List[int]],
                                  num_nodes: int,
                                  skew_factor: float = 2.0) -> np.ndarray:

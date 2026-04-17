@@ -37,7 +37,7 @@ from Traffic_Benchmarks import (
     compute_benchmark_score, TrafficType,
     find_adversarial_critical_points, get_hw_reconfig_ratio,
     generate_adversarial_skew_opera, generate_adversarial_skew_shale,
-    generate_adversarial_skew_ga,
+    generate_adversarial_skew_sirius, generate_adversarial_skew_ga,
     _get_all_pairs_dist,
 )
 
@@ -757,6 +757,10 @@ _bulk_ceil  = _op_params.opera_alpha * (1.0 - _op_params.opera_delta /
 # the skew collapses to uniform → those architectures are unaffected.
 _ga_adv_tm = generate_adversarial_skew_ga(genetic_adj, N)
 
+_sirius_adv_tm = generate_adversarial_skew_sirius(N)
+_sirius_sigma_t = np.sum(_sirius_adv_tm)
+_sirius_lcrit = 0.85 * N * (N - 1) / _sirius_sigma_t
+
 _adv_skews = [
     (
         'opera',
@@ -774,6 +778,15 @@ _adv_skews = [
         r'(Many-to-one funnel: $u_{max} \to N{-}1$, Shale throughput $\to 1/(N{-}1)$)',
         'adversarial_skew_shale.png',
         None, None,
+    ),
+    (
+        'sirius',
+        _sirius_adv_tm,
+        'Sirius-Adversarial Skew\n'
+        r'(Demand surge: VLB queue divergence at $\rho > 0.85$, exp collapse)',
+        'adversarial_skew_sirius.png',
+        f'Sirius VLB threshold $\\rho^*$=0.85 ($L\\approx${_sirius_lcrit:.2f})',
+        _sirius_lcrit,
     ),
     (
         'genetic',
@@ -835,12 +848,12 @@ for target_arch, base_tm, fig_title, fname, vline_label, vline_x in _adv_skews:
 
 
 # ====================================================================
-print(f"\nDone — {27} figures written to {IMG_DIR}/")
-# Figure inventory (27 total):
+print(f"\nDone — {28} figures written to {IMG_DIR}/")
+# Figure inventory (28 total):
 #  1-5   shale WF + benchmarks
 #  6-10  opera WF + efficiency + throughput
 #  11-12 sirius efficiency + bar
 #  13-14 genetic WF
 #  15-22 cross-arch benchmarks (4 scenarios × 2 + capacity + fct)
 #  23    adversarial_critical_points
-#  24-26 adversarial_skew_{opera,shale,ga}  ← NEW
+#  24-27 adversarial_skew_{opera,shale,sirius,ga}

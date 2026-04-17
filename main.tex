@@ -5,6 +5,7 @@
 \usepackage{amssymb}
 \usepackage{float}
 \usepackage{multirow}
+\usepackage{algpseudocode}
 
 \title{Optical Circuit Switched Networks: Connectivity Matrices and Genetic Algorithms}
 \author{Oneal Wang}
@@ -962,17 +963,64 @@
     \label{sec:adv_opera}
     \textbf{Pattern.}  Two ``hot'' destination nodes ($j \in \{0,1\}$) attract high demand $D_{\text{hot}} = 8.0$ from every source, while all other pairs carry only $D_{\text{cold}} = 0.1$.  Implemented as \texttt{generate\_adversarial\_skew\_opera(N, hot\_demand=8.0, cold\_demand=0.1, num\_hot=2)} in \texttt{Traffic\_Benchmarks.py}.
 
-    \textbf{Numerical values ($N=9$).}  Total demand:
+    \paragraph{Demand matrix definition.}  Let $\mathcal{H} = \{0, 1\}$ be the hot destination set ($|\mathcal{H}| = K = 2$).  The demand matrix $\mathbf{D}^{\text{Opera}} \in \mathbb{R}^{N \times N}$ is:
+    \begin{equation}
+        D^{\text{Opera}}_{i,j} =
+        \begin{cases}
+            D_{\text{hot}}  = 8.0 & \text{if } j \in \mathcal{H} \text{ and } i \neq j \\
+            D_{\text{cold}} = 0.1 & \text{if } j \notin \mathcal{H} \text{ and } i \neq j \\
+            0                     & \text{if } i = j
+        \end{cases}
+        \label{eq:matrix_opera}
+    \end{equation}
+    In block form, partitioning columns into $\mathcal{H}$ (first $K$) and $\bar{\mathcal{H}}$ (remaining $N{-}K$):
     \[
-        \Sigma_T = 2 \cdot (N-1) \cdot D_{\text{hot}} + \bigl(N(N-1) - 2(N-1)\bigr) \cdot D_{\text{cold}} = 2 \cdot 8 \cdot 8 + 56 \cdot 0.1 = 133.6
+        \mathbf{D}^{\text{Opera}} =
+        \begin{pmatrix}
+            0 & D_h & D_c & \cdots & D_c \\
+            D_h & 0 & D_c & \cdots & D_c \\
+            D_h & D_h & 0 & \cdots & D_c \\
+            \vdots & \vdots & \vdots & \ddots & \vdots \\
+            D_h & D_h & D_c & \cdots & 0
+        \end{pmatrix}
+        \quad \text{where } D_h = 8.0,\; D_c = 0.1
     \]
-    Normalized offered load $\rho = \Sigma_T / \bigl(N(N-1)\bigr) = 133.6/72 \approx 1.856$ at $L=1$.  The bulk-circuit capacity ceiling is $\alpha(1-\delta/T_c) = 0.92 \times 0.96 = 0.8832$~\cite{opera}, so Opera's critical load factor is:
-    \[
-        L_{\text{crit}}^{\text{Opera}} = \frac{0.8832 \cdot 72}{133.6} \approx 0.48
-    \]
-    At $L \approx 0.48$, bulk circuits are fully booked; all additional traffic overflows to the multi-hop expander, driving bandwidth tax from ${\sim}0.6\%$ to $>20\%$ and triggering M/D/1 queue divergence~\cite{opera}.
 
-    \textbf{Why Opera is weak.}  Opera's design assumes the vast majority of bytes are in bulk flows that can wait for a direct 1-hop circuit~\cite{opera}.  When two destinations attract $80\times$ more demand than others, the round-robin rotor schedule cannot provide direct circuits fast enough --- the bulk-circuit queue grows without bound, and the $\alpha$-split mechanism has no way to redistribute capacity toward the elephant flows.  Meanwhile, Sirius ($\eta/2$ VLB, traffic-oblivious~\cite{sirius}), Shale (uniform spray~\cite{shale}), and GA-Robust (static short paths) are unaffected because their routing does not depend on circuit scheduling.
+    \paragraph{Algorithm.}
+    \begin{algorithmic}[1]
+        \Require $N$, $K=2$, $D_h=8.0$, $D_c=0.1$
+        \State $\mathbf{D} \gets D_c \cdot (\mathbf{1}_{N \times N} - \mathbf{I}_N)$ \Comment{fill all off-diagonal with $D_c$}
+        \For{$i = 0$ \textbf{to} $N-1$}
+            \For{$j = 0$ \textbf{to} $K-1$}
+                \If{$i \neq j$}
+                    $D_{i,j} \gets D_h$ \Comment{overwrite hot columns}
+                \EndIf
+            \EndFor
+        \EndFor
+        \State \Return $\mathbf{D}$
+    \end{algorithmic}
+
+    \paragraph{Numerical values ($N=9$).}  Total demand:
+    \[
+        \Sigma_T = K(N{-}1) D_h + \bigl(N(N{-}1) - K(N{-}1)\bigr) D_c = 2 \cdot 8 \cdot 8 + 56 \cdot 0.1 = 133.6
+    \]
+    Normalized offered load $\rho = \Sigma_T / \bigl(N(N{-}1)\bigr) = 133.6/72 \approx 1.856$ at $L=1$.  The bulk-circuit capacity ceiling is $\alpha(1{-}\delta/T_c) = 0.92 \times 0.96 = 0.8832$~\cite{opera}, so Opera's critical load factor is:
+    \[
+        L_{\text{crit}}^{\text{Opera}} = \frac{\rho^*_{\text{Opera}} \cdot N(N{-}1)}{\Sigma_T} = \frac{0.8832 \cdot 72}{133.6} \approx 0.48
+    \]
+
+    \paragraph{Mathematical proof of adversarial property.}
+    Opera's throughput model is $\mathcal{T} = \alpha \cdot r \cdot (1 - \delta/T_c)$ for the bulk fraction.  The normalised load under this matrix is:
+    \[
+        \rho(L) = L \cdot \frac{\Sigma_T}{N(N{-}1)} = 1.856\,L
+    \]
+    The bulk-circuit queue occupancy follows $M/D/1$: $\bar{Q} = \rho_b / (2(1{-}\rho_b))$ where $\rho_b = \alpha \rho / (\alpha(1{-}\delta/T_c)) = \rho/0.96$.  Setting $\rho_b = 1$ (queue divergence):
+    \[
+        \rho_b = 1 \implies \rho = 0.96 \cdot (1{-}\delta/T_c) = 0.8832 \implies L^* = 0.8832 / 1.856 \approx 0.476
+    \]
+    Above $L^*$, $\bar{Q} \to \infty$; the M/D/1 queue diverges and bulk-circuit throughput saturates at $\alpha(1{-}\delta/T_c) \cdot r$~\cite{opera}.  Surplus traffic overflows to the multi-hop expander at $r/\ell$ ($\ell \geq 2$), raising bandwidth tax from ${\sim}0.6\%$ to $>20\%$.
+
+    \textbf{Why Opera is uniquely weak.}  Opera's design assumes the vast majority of bytes are in bulk flows that can wait for a direct 1-hop circuit~\cite{opera}.  When two destinations attract $80\times$ more demand than others, the round-robin rotor schedule cannot provide direct circuits fast enough --- the bulk-circuit queue grows without bound, and the $\alpha$-split mechanism has no way to redistribute capacity toward the elephant flows.  Meanwhile, Sirius ($\eta/2$ VLB, traffic-oblivious~\cite{sirius}), Shale (uniform spray~\cite{shale}), and GA-Robust (static short paths) are unaffected because their routing does not depend on circuit scheduling.
 
     \begin{figure}[H]
         \centering
@@ -985,13 +1033,61 @@
     \label{sec:adv_shale}
     \textbf{Pattern.}  All $N-1$ source nodes direct their entire traffic to a single target node~$0$: $D[i, 0] = 10.0$ for $i \neq 0$; all other entries zero.  Implemented as \texttt{generate\_adversarial\_skew\_shale(N, target\_node=0, demand=10.0)}.
 
-    \textbf{Numerical values ($N=9$).}  Total demand: $\Sigma_T = 8 \times 10 = 80$.  Under Shale's VLB routing, every spray path must eventually exit through node~$0$'s ingress link~\cite{shale}.  The maximum directed-link utilization becomes:
+    \paragraph{Demand matrix definition.}  Let $t = 0$ be the target node and $d = 10.0$ the funnel demand.  The demand matrix $\mathbf{D}^{\text{Shale}} \in \mathbb{R}^{N \times N}$ is:
+    \begin{equation}
+        D^{\text{Shale}}_{i,j} =
+        \begin{cases}
+            d = 10.0 & \text{if } j = t \text{ and } i \neq t \\
+            0        & \text{otherwise}
+        \end{cases}
+        \label{eq:matrix_shale}
+    \end{equation}
+    Equivalently, $\mathbf{D}^{\text{Shale}} = d \cdot \mathbf{e}_t (\mathbf{1}_N - \mathbf{e}_t)^\top$ where $\mathbf{e}_t$ selects column $t$:
+    \[
+        \mathbf{D}^{\text{Shale}} =
+        \begin{pmatrix}
+            0 & 0 & 0 & \cdots & 0 \\
+            d & 0 & 0 & \cdots & 0 \\
+            d & 0 & 0 & \cdots & 0 \\
+            \vdots & \vdots & \vdots & \ddots & \vdots \\
+            d & 0 & 0 & \cdots & 0
+        \end{pmatrix}
+        \quad \text{where column 0 carries all demand}
+    \]
+
+    \paragraph{Algorithm.}
+    \begin{algorithmic}[1]
+        \Require $N$, target $t=0$, demand $d=10.0$
+        \State $\mathbf{D} \gets \mathbf{0}_{N \times N}$
+        \For{$i = 0$ \textbf{to} $N-1$}
+            \If{$i \neq t$}
+                $D_{i,t} \gets d$
+            \EndIf
+        \EndFor
+        \State \Return $\mathbf{D}$
+    \end{algorithmic}
+
+    \paragraph{Numerical values ($N=9$).}  Total demand: $\Sigma_T = (N{-}1) \cdot d = 8 \times 10 = 80$.  Under Shale's VLB routing, every spray path must eventually exit through node~$0$'s ingress link~\cite{shale}.  The maximum directed-link utilization becomes:
     \[
         u_{\max} \to N-1 = 8 \quad \Longrightarrow \quad \text{throughput} \approx \frac{r}{N-1} = \frac{r}{8}
     \]
     compared to the baseline $r/(h{+}1) = r/3$ for $h=2$.  This represents a $2.67\times$ throughput reduction purely from the funnel pattern.
 
-    \textbf{Why Shale is weak.}  Shale's VLB spray distributes traffic uniformly across intermediate nodes, which is optimal when demand is itself uniform~\cite{shale}.  Under a many-to-one funnel, the spray is counterproductive: it forces $N-1$ source--destination paths to converge on a single ingress link, making that link the bottleneck regardless of spray depth $h$.  The congestion control in~\cite{shale} achieves bounded queuing, but the delivered throughput is still limited by $1/u_{\max}$.  Opera and Sirius serve node~$0$ directly (1-hop, fully connected), so they are unaffected; GA-Robust's evolved topology typically provides 1--2 hop paths to any node.
+    \paragraph{Mathematical proof of adversarial property.}
+    Shale's throughput is $\mathcal{T} = r / u_{\max}$ where $u_{\max} = \max_{(a,b) \in E} \sum_{f \ni (a,b)} D_f / k_f$~\cite{shale}.  Under the funnel matrix, every source $i \neq t$ sends demand $d$ to target $t$.  Shale's VLB spray distributes each flow uniformly across $k_f$ paths, but all paths must terminate at node~$t$'s ingress link $(*, t)$.  The directed load on this link is:
+    \[
+        u_{(*,t)} = \sum_{i \neq t} \frac{D_{i,t}}{k_{i,t}} \cdot k_{i,t} = \sum_{i \neq t} d = (N{-}1) \cdot d
+    \]
+    Since no other link carries more than $d$ (only one source contributes per non-target link):
+    \[
+        u_{\max} = (N{-}1) \cdot d \quad \Longrightarrow \quad \mathcal{T} = \frac{r}{(N{-}1) \cdot d} \cdot d = \frac{r}{N{-}1}
+    \]
+    The throughput reduction factor vs.\ baseline uniform ($u_{\max}^{\text{unif}} \approx h{+}1$) is:
+    \[
+        \frac{\mathcal{T}_{\text{funnel}}}{\mathcal{T}_{\text{unif}}} = \frac{h{+}1}{N{-}1} = \frac{3}{8} = 0.375 \quad (2.67\times\text{ reduction})
+    \]
+
+    \textbf{Why Shale is uniquely weak.}  Shale's VLB spray distributes traffic uniformly across intermediate nodes, which is optimal when demand is itself uniform~\cite{shale}.  Under a many-to-one funnel, the spray is counterproductive: it forces $N{-}1$ source--destination paths to converge on a single ingress link, making that link the bottleneck regardless of spray depth $h$.  The congestion control in~\cite{shale} achieves bounded queuing, but the delivered throughput is still limited by $1/u_{\max}$.  Opera and Sirius serve node~$0$ directly (1-hop, fully connected), so they are unaffected; GA-Robust's evolved topology typically provides 1--2 hop paths to any node.
 
     \begin{figure}[H]
         \centering
@@ -999,6 +1095,92 @@
         \caption{Shale-adversarial many-to-one funnel ($D[i,0]=10$ for all $i \neq 0$). \textbf{Left:} Shale's throughput collapses to ${\sim}1/(N{-}1)$ of line rate as $u_{\max} \to N{-}1$; Opera, Sirius, and GA-Robust remain unaffected. \textbf{Right:} Shale's FCT is orders of magnitude higher due to the congestion-limited bottleneck at node~$0$.}
         \label{fig:adv_shale}
     \end{figure}
+
+    \subsubsection{Sirius-Adversarial: Synchronized Demand Surge}
+    \label{sec:adv_sirius}
+    \textbf{Pattern.}  A majority subset $\mathcal{B}$ of source nodes (the ``burst set,'' $|\mathcal{B}| = 5$) transmit heavy demand $D_b = 5.0$ to \emph{all} destinations simultaneously, while the remaining $N - |\mathcal{B}|$ sources carry only background demand $D_{\text{bg}} = 0.5$.  Implemented as \texttt{generate\_adversarial\_skew\_sirius(N, num\_burst=5, d\_burst=5.0, d\_background=0.5)} in \texttt{Traffic\_Benchmarks.py}.
+
+    \paragraph{Demand matrix definition.}  Let $\mathcal{B} = \{0, 1, \ldots, K{-}1\}$ with $K = 5$ be the burst source set.  The demand matrix $\mathbf{D}^{\text{Sirius}} \in \mathbb{R}^{N \times N}$ is:
+    \begin{equation}
+        D^{\text{Sirius}}_{i,j} =
+        \begin{cases}
+            D_b    = 5.0 & \text{if } i \in \mathcal{B} \text{ and } i \neq j \\
+            D_{\text{bg}} = 0.5 & \text{if } i \notin \mathcal{B} \text{ and } i \neq j \\
+            0             & \text{if } i = j
+        \end{cases}
+        \label{eq:matrix_sirius}
+    \end{equation}
+    In block form, partitioning \emph{rows} into burst ($\mathcal{B}$) and background ($\bar{\mathcal{B}}$):
+    \[
+        \mathbf{D}^{\text{Sirius}} =
+        \begin{pmatrix}
+            \mathbf{0}_K & D_b \cdot (\mathbf{J}_{K \times (N-K)} ) \\[4pt]
+            D_{\text{bg}} \cdot (\mathbf{J}_{(N-K) \times K}) & \mathbf{0}_{N-K}
+        \end{pmatrix}^*
+    \]
+    where $\mathbf{J}$ denotes all-ones blocks and ${}^*$ indicates diagonal entries are zeroed.
+
+    \paragraph{Algorithm.}
+    \begin{algorithmic}[1]
+        \Require $N$, $K=5$, $D_b=5.0$, $D_{\text{bg}}=0.5$
+        \State $\mathbf{D} \gets \mathbf{0}_{N \times N}$
+        \For{$i = 0$ \textbf{to} $N-1$}
+            \For{$j = 0$ \textbf{to} $N-1$}
+                \If{$i \neq j$}
+                    \If{$i < K$}
+                        $D_{i,j} \gets D_b$ \Comment{burst source}
+                    \Else
+                        \quad $D_{i,j} \gets D_{\text{bg}}$ \Comment{background source}
+                    \EndIf
+                \EndIf
+            \EndFor
+        \EndFor
+        \State \Return $\mathbf{D}$
+    \end{algorithmic}
+
+    \paragraph{Numerical values ($N=9$).}  Total demand:
+    \[
+        \Sigma_T = K(N{-}1) D_b + (N{-}K)(N{-}1) D_{\text{bg}} = 5 \cdot 8 \cdot 5.0 + 4 \cdot 8 \cdot 0.5 = 200 + 16 = 216
+    \]
+    Normalized offered load $\rho = \Sigma_T / (N(N{-}1)) = 216/72 = 3.0$ at $L=1$.  Sirius's VLB queue-divergence threshold is $\rho^* = 0.85$~\cite{sirius}, giving:
+    \[
+        L_{\text{crit}}^{\text{Sirius}} = \frac{0.85 \cdot 72}{216} \approx 0.283
+    \]
+
+    \paragraph{Mathematical proof of adversarial property.}
+    Sirius's throughput model includes the load penalty $C_{\text{load}}(\rho) = \exp(-10(\rho - 0.85))$ for $\rho > 0.85$~\cite{sirius}.  Under this demand matrix:
+    \[
+        \rho(L) = 3.0\,L \qquad \Longrightarrow \qquad \rho > 0.85 \text{ when } L > 0.283
+    \]
+    At representative load factors, the penalty for Sirius vs.\ Opera ($C^{\text{Op}} = \exp(-8(\rho - 0.883))$ for $\rho > 0.883$):
+
+    \begin{center}
+    \begin{tabular}{|c|c|c|c|c|}
+        \hline
+        $L$ & $\rho$ & $C_{\text{load}}^{\text{Sirius}}$ & $C_{\text{load}}^{\text{Opera}}$ & \textbf{Sirius/Opera ratio} \\
+        \hline
+        0.30 & 0.90 & $e^{-0.5} = 0.607$ & $e^{-0.134} = 0.875$ & 0.69 \\
+        0.35 & 1.05 & $e^{-2.0} = 0.135$ & $e^{-1.34} = 0.263$ & 0.51 \\
+        0.50 & 1.50 & $e^{-6.5} = 0.0015$ & $e^{-4.94} = 0.0072$ & 0.21 \\
+        0.70 & 2.10 & $e^{-12.5} \approx 10^{-5.4}$ & $e^{-9.74} \approx 10^{-4.2}$ & 0.06 \\
+        \hline
+    \end{tabular}
+    \end{center}
+
+    The key mechanism is the \emph{steeper decay rate}: Sirius decays at rate $-10$ per unit $\rho$ vs.\ Opera's $-8$.  Combined with Sirius's \emph{lower threshold} ($0.85$ vs.\ $0.883$), at $L = 0.50$ Sirius retains only $21\%$ of Opera's throughput.  Shale and GA-Robust use entirely different degradation mechanisms ($u_{\max}$ and hop-count penalties respectively) that are insensitive to global $\rho$.
+
+    \textbf{Why Sirius is uniquely weak.}  Sirius's Valiant Load Balancing routes every flow through a random intermediate node, doubling effective link utilization~\cite{sirius}.  When $K = 5$ burst sources simultaneously flood all destinations, every intermediate node must buffer and forward spray traffic from $K$ heavy senders.  The epoch-based schedule provides exactly one forwarding slot per intermediate--destination pair per epoch ($N \times T_{\text{slot}}$).  Once aggregate spray arrival rate exceeds per-slot forwarding capacity, queues at \emph{all} intermediaries diverge simultaneously --- the cascading failure captured by $\exp(-10(\rho - 0.85))$.  Ballani et al.\ describe how Sirius ``eliminates buffers in the optical core and carefully manages edge buffering''~\cite{sirius}; this bounded-buffer design means once VLB intermediaries saturate, there is no slack to absorb excess demand.
+
+    Opera handles this traffic better because its demand-aware bulk scheduling matches circuits to the heaviest source--destination pairs, with $\alpha = 0.92$ of traffic served by direct 1-hop circuits~\cite{opera}.  Shale is unaffected because the demand is spread across all destinations (no funnel: $u_{\max}$ remains moderate).  GA-Robust uses shortest-path routing on its sparse topology and has no VLB intermediate buffering.
+
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\textwidth]{images/adversarial_skew_sirius.png}
+        \caption{Sirius-adversarial demand surge ($|\mathcal{B}|=5$, $D_b=5.0$, $D_{\text{bg}}=0.5$). \textbf{Left:} Sirius's throughput collapses exponentially above $L\approx0.28$ (VLB threshold, dashed red); Opera degrades more gradually; Shale and GA-Robust continue scaling. \textbf{Right:} Sirius's FCT diverges orders of magnitude faster than other architectures due to simultaneous queue buildup at all VLB intermediaries.}
+        \label{fig:adv_sirius}
+    \end{figure}
+
+    \paragraph{Sirius paper support.}  The Sirius SIGCOMM'20 paper~\cite{sirius} describes the VLB architecture where ``all traffic is sent via a random intermediate node'' (\S3), that the system ``eliminates buffers in the optical core and carefully manages edge buffering'' (\S4), and that the scheduling operates in fixed $100\,\text{ns}$ timeslots within epochs of $N$ slots (\S6).  The congestion control protocol manages per-destination queues at edge buffers, but when all intermediate nodes are simultaneously loaded (as in the demand surge), the finite epoch length and bounded buffers cannot absorb the excess --- consistent with the exponential collapse model at $\rho > 0.85$.
 
     \subsubsection{GA-Adversarial: Topology-Aware Long-Hop Scatter}
     \label{sec:adv_ga}
@@ -1266,6 +1448,109 @@
 
     \paragraph{GA-Robust: middle ground confirmed ($S\approx0.08$--$0.09$ across all scenarios).}
     GA-Robust achieves the highest and most consistent composite scores ($S_{\text{Uniform}}=0.0827$, $S_{\text{Hotspot}}=0.0937$, $S_{\text{Traffic Demand}}=0.0453$), demonstrating that multi-objective evolution finds the structural middle ground: hw\_reconfig\_ratio~$=0$ (no circuit reconfiguration, avoiding Opera's $4\%$~\cite{opera} and Sirius's $3.84\%$~\cite{sirius} penalties), no forced routing mode (unlike Shale's mandatory VLB spraying~\cite{shale}), and topology specifically evolved to avoid single-bottleneck failure modes (\S5.2).  Its analytical critical point $\rho^*\approx1/\overline{d}$ has no sharp saturation cliff --- GA-Robust degrades gracefully rather than collapsing.
+    \section{Architecture-Pure Adversarial Vulnerability Analysis}
+    \label{sec:arch_pure_adversarial}
+
+    The preceding adversarial analysis (\S\ref{sec:adversarial_skew}) uses each architecture's native hardware parameters ($T_{\text{slot}}$, $\delta$, $\eta$), which conflates routing-level weaknesses with hardware-level differences.  To isolate the \emph{architectural} vulnerability --- the routing strategy and topology structure alone --- we hypothetically equalize all timeslot durations to a common value $T^* = 100\,\text{ns}$ and set reconfiguration overhead $\delta/T^* = 0$ for all architectures.  Under this idealisation, any performance difference is attributable purely to how each architecture \emph{routes} traffic, not how fast its hardware switches.
+
+    \subsection{Equalisation Assumptions}
+    \begin{itemize}
+        \item \textbf{Common timeslot:} $T_{\text{slot}} = T^* = 100\,\text{ns}$ for all architectures.
+        \item \textbf{Zero reconfiguration:} $\delta = 0 \implies \eta = 1.0$ for all (no guardband, no laser tuning, no rotor switching).
+        \item \textbf{Preserved routing:} Opera still uses $\alpha$-split (bulk/expander), Sirius still uses 2-hop VLB spray, Shale still uses $h$-hop VLB spray on its Hamming graph, GA-Robust still uses shortest-path routing on its evolved topology.
+        \item \textbf{Preserved topology:} Each architecture retains its native graph structure (fully-connected for Opera/Sirius, RR2 Hamming for Shale, 4-regular evolved for GA).
+    \end{itemize}
+
+    Under these conditions, the \emph{only} remaining differences are the routing strategy and the topology-induced hop structure.  The adversarial demand matrices from \S\ref{sec:adversarial_skew} can now be analysed as pure routing vulnerabilities.
+
+    \subsection{Architecture-Pure Vulnerability Proofs}
+
+    \subsubsection{Opera: Bulk-Schedule Saturation (routing-level)}
+    With $\delta = 0$ and $\eta = 1$, Opera's effective rate simplifies to:
+    \[
+        r_{\text{eff}}^{\text{Opera}} = \alpha \cdot r + (1{-}\alpha) \cdot r / \ell
+    \]
+    The bulk-circuit ceiling becomes $\alpha \cdot 1.0 = \alpha = 0.92$.  Under the elephant-flow matrix $\mathbf{D}^{\text{Opera}}$ (Eq.~\ref{eq:matrix_opera}):
+    \[
+        \rho(L) = 1.856\,L, \qquad L_{\text{crit}}^{\text{pure}} = \frac{0.92}{1.856} \approx 0.496
+    \]
+    Even with perfect hardware, Opera's $\alpha$-split routing saturates at $L \approx 0.50$ because the bulk scheduler cannot redistribute circuits to the two elephant destinations.  The M/D/1 queue divergence at $\rho_b = 1$ is a \emph{routing-level} property --- the round-robin rotor schedule provides each destination equal service time regardless of demand.
+
+    \textbf{Demand matrix proof:}
+    \[
+        \mathbf{D}^{\text{Opera}} \text{ has column sums: } \text{col}_j =
+        \begin{cases}
+            (N{-}1) \cdot 8.0 = 64 & j \in \mathcal{H} \\
+            (N{-}1) \cdot 0.1 = 0.8 & j \notin \mathcal{H}
+        \end{cases}
+    \]
+    The column-sum ratio $64 / 0.8 = 80\times$ exceeds Opera's ability to rebalance circuits (fixed round-robin, $1/N$ service per destination per epoch), proving the pattern is adversarial for any demand-oblivious schedule.
+
+    \subsubsection{Shale: Ingress-Link Bottleneck (routing-level)}
+    With $\delta = 0$ and $\eta = 1$, Shale's throughput is still $r / u_{\max}$ because the congestion factor depends on the \emph{topology structure} (RR2 Hamming graph), not hardware timing.  Under the funnel matrix $\mathbf{D}^{\text{Shale}}$ (Eq.~\ref{eq:matrix_shale}):
+    \[
+        u_{\max} = (N{-}1) \cdot d = 80, \qquad \mathcal{T} = r / u_{\max} = r / 80
+    \]
+    vs.\ baseline $r / (h{+}1) = r / 3$.  The $26.7\times$ throughput reduction is entirely routing-structural: VLB spray forces all paths through the target's ingress link regardless of hardware speed.
+
+    \textbf{Demand matrix proof:}
+    \[
+        \mathbf{D}^{\text{Shale}} \text{ has column sums: } \text{col}_0 = (N{-}1) \cdot d = 80, \quad \text{col}_{j \neq 0} = 0
+    \]
+    The matrix has rank 1 (all rows are scalar multiples of $\mathbf{e}_0^\top$).  Under \emph{any} oblivious routing scheme that distributes load across intermediate nodes, all spray paths must converge on node~$0$'s ingress --- the bottleneck is topological, not temporal.
+
+    \subsubsection{Sirius: VLB Queue Divergence (routing-level)}
+    With $\delta = 0$ and $\eta = 1$, Sirius's per-flow rate becomes $r / \mathcal{H}(\ell)$, but the VLB queue-divergence penalty $C_{\text{load}}(\rho) = \exp(-10(\rho - 0.85))$ is \emph{independent of $\eta$} and persists because it models intermediate-node buffer saturation, not hardware timing.  Under $\mathbf{D}^{\text{Sirius}}$ (Eq.~\ref{eq:matrix_sirius}):
+    \[
+        \rho(L) = 3.0\,L, \qquad C_{\text{load}}(L) = \exp\bigl(-10(3L - 0.85)\bigr) \text{ for } L > 0.283
+    \]
+    At $L = 0.35$: $C_{\text{load}} = e^{-2.0} = 0.135$.  With perfect hardware ($\eta = 1$), throughput is $0.135 \cdot r$ --- an $86.5\%$ collapse caused entirely by the mandatory 2-hop VLB spray creating simultaneous queue pressure at all intermediate nodes.
+
+    \textbf{Demand matrix proof:}
+    \[
+        \mathbf{D}^{\text{Sirius}} \text{ has row sums: }
+        \text{row}_i =
+        \begin{cases}
+            (N{-}1) \cdot D_b = 40 & i \in \mathcal{B} \\
+            (N{-}1) \cdot D_{\text{bg}} = 4 & i \notin \mathcal{B}
+        \end{cases}
+    \]
+    The row-sum ratio $40/4 = 10\times$ creates $K = 5$ ``heavy'' senders.  Under VLB, each heavy sender sprays demand through \emph{all} $N{-}1$ intermediate nodes.  The aggregate spray arrival at any intermediate $m$ is:
+    \[
+        \text{spray}(m) = \sum_{i \in \mathcal{B}} \frac{\text{row}_i}{N{-}1} + \sum_{i \notin \mathcal{B}} \frac{\text{row}_i}{N{-}1} = \frac{K \cdot 40 + (N{-}K) \cdot 4}{N{-}1} = \frac{216}{8} = 27
+    \]
+    Each intermediate must forward 27 units but has only $N{-}1 = 8$ egress slots per epoch.  The forwarding deficit $27/8 = 3.375 > 1$ confirms queue buildup at every intermediate --- the system-wide divergence captured by $C_{\text{load}}$.
+
+    \subsubsection{GA-Robust: Hop-Count Penalty (routing-level)}
+    With $\delta = 0$, GA's effective rate is $r / \ell$ for each flow.  The long-hop skew from $\mathbf{D}^{\text{GA}}$ concentrates demand on 3-hop pairs ($\ell = 3$), giving $r_{\text{eff}} = r/3$.  This penalty is purely topological: any sparse 4-regular graph on $N = 9$ must have ${\sim}17\%$ of pairs at 3 hops (pigeonhole on degree).  Hardware equalisation has no effect on hop count.
+
+    \subsection{Summary: Routing vs.\ Hardware}
+    \begin{table}[H]
+        \centering
+        \caption{Architecture vulnerability decomposition: hardware-dependent vs.\ routing-structural.  ``HW-equalized $L_{\text{crit}}$'' shows the critical load under ideal hardware ($\delta = 0$, $\eta = 1$).}
+        \begin{tabular}{|l|l|c|c|l|}
+            \hline
+            \textbf{Arch.} & \textbf{Adversarial traffic} & $L_{\text{crit}}$ (paper) & $L_{\text{crit}}$ (HW-eq.) & \textbf{Root cause} \\
+            \hline
+            Opera  & Elephant-flow ($\mathbf{D}^{\text{Opera}}$) & 0.476 & 0.496 & Bulk-schedule saturation \\
+            Shale  & Funnel ($\mathbf{D}^{\text{Shale}}$)        & --- & --- & Ingress-link bottleneck \\
+            Sirius & Demand surge ($\mathbf{D}^{\text{Sirius}}$) & 0.283 & 0.283 & VLB queue divergence \\
+            GA     & Long-hop ($\mathbf{D}^{\text{GA}}$)         & --- & --- & Multi-hop penalty \\
+            \hline
+        \end{tabular}
+        \label{tab:arch_pure_vulnerability}
+    \end{table}
+
+    Key findings:
+    \begin{itemize}
+        \item \textbf{Opera's} critical load shifts from $0.476$ to $0.496$ ($+4.2\%$) under hardware equalisation --- the modest improvement confirms that the bulk-schedule saturation is overwhelmingly a routing-level problem, with hardware contributing only a small correction via $\delta/T_c$.
+        \item \textbf{Sirius's} critical load is \emph{unchanged} ($0.283$) because $C_{\text{load}}(\rho)$ is independent of $\eta$.  The VLB queue divergence is a pure routing-structural vulnerability.
+        \item \textbf{Shale's} throughput degradation factor $(N{-}1)/(h{+}1) = 2.67\times$ is topology-structural and independent of timeslot duration.
+        \item \textbf{GA-Robust's} hop-count penalty is determined entirely by graph diameter and has no hardware component.
+    \end{itemize}
+
+    This demonstrates that no amount of hardware improvement (faster lasers, shorter guardbands, wider timeslots) can rescue any architecture from its routing-level adversarial vulnerability.  The adversarial demand matrices $\mathbf{D}^{\text{Opera}}$, $\mathbf{D}^{\text{Shale}}$, $\mathbf{D}^{\text{Sirius}}$, and $\mathbf{D}^{\text{GA}}$ expose \emph{fundamental} architectural limitations that require routing-level redesign to address.
+
     \begin{thebibliography}{9}
         \bibitem{opera}
         W.~M. Mellette, R.~Das, Y.~Guo, R.~McGuinness, A.~C. Snoeren, and G.~Porter,
